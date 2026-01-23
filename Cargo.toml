@@ -11,5 +11,6 @@ num-bigint-dig = { version = "0.8.6", features = ["rand"] }
 num-integer = "0.1.46"
 num-traits = "0.2.19"
 rand = "0.8"
+recrypt = "0.14.1"
 rsa = "0.9.10"
 tokio = { version = "1.49.0", features = ["full"] }
