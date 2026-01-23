@@ -35,6 +35,7 @@ fn main() {
 
     assert!(server.verify(&blinded_message.message(), &signature));
     assert!(!server.verify(&blinded_message.message(), &blinded_signature));
+    assert!(server.verify(&blinded_message.blinded_message(), &blinded_signature));
 }
 
 struct Server {
@@ -53,7 +54,7 @@ impl Server {
     }
 }
 
-fn verify_identity(identity: &str) -> bool {
+fn verify_identity(_identity: &str) -> bool {
     // authentication logic
     return true;
 }
@@ -147,9 +148,4 @@ impl BlindedMessage {
     fn message(&self) -> Vec<u8> {
         self.m.to_bytes_le()
     }
-}
-
-struct Submission {
-    payload: Vec<u8>,
-    signature: Vec<u8>,
 }
