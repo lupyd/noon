@@ -1,3 +1,6 @@
+use std::io::Write;
+use std::time::Instant;
+
 use recrypt::{
     api::{
         DefaultRng, EncryptedValue, Plaintext, PrivateKey, PublicKey, SigningKeypair, TransformKey,
@@ -98,28 +101,90 @@ impl Client {
 
 #[test]
 fn test_re_encryption() {
+    fn print_encrypted_value(ev: &EncryptedValue, w: &mut impl Write) {
+        match ev {
+            EncryptedValue::EncryptedOnceValue {
+                ephemeral_public_key,
+                encrypted_message,
+                auth_hash,
+                public_signing_key,
+                signature,
+            } => {
+                writeln!(w, "EncryptedOnceValue:").unwrap();
+                let (x, y) = ephemeral_public_key.bytes_x_y();
+                writeln!(w, "  ephemeral_public_key: x={}, y={}", hex::encode(x), hex::encode(y)).unwrap();
+                writeln!(w, "  encrypted_message: {}", hex::encode(encrypted_message.bytes())).unwrap();
+                writeln!(w, "  auth_hash: {}", hex::encode(auth_hash.bytes())).unwrap();
+                writeln!(w, "  public_signing_key: {}", hex::encode(public_signing_key.bytes())).unwrap();
+                writeln!(w, "  signature: {}", hex::encode(signature.bytes())).unwrap();
+            }
+            EncryptedValue::TransformedValue {
+                ephemeral_public_key,
+                encrypted_message,
+                auth_hash,
+                transform_blocks,
+                public_signing_key,
+                signature,
+            } => {
+                writeln!(w, "TransformedValue:").unwrap();
+                let (x, y) = ephemeral_public_key.bytes_x_y();
+                writeln!(w, "  ephemeral_public_key: x={}, y={}", hex::encode(x), hex::encode(y)).unwrap();
+                writeln!(w, "  encrypted_message: {}", hex::encode(encrypted_message.bytes())).unwrap();
+                writeln!(w, "  auth_hash: {}", hex::encode(auth_hash.bytes())).unwrap();
+                writeln!(w, "  public_signing_key: {}", hex::encode(public_signing_key.bytes())).unwrap();
+                writeln!(w, "  signature: {}", hex::encode(signature.bytes())).unwrap();
+                writeln!(w, "  transform_blocks:").unwrap();
+                for (i, block) in transform_blocks.to_vec().iter().enumerate() {
+                    writeln!(w, "    [{}]:", i).unwrap();
+                    let (x, y) = block.public_key().bytes_x_y();
+                    writeln!(w, "      public_key: x={}, y={}", hex::encode(x), hex::encode(y)).unwrap();
+                    writeln!(w, "      encrypted_temp_key: {}", hex::encode(block.encrypted_temp_key().bytes())).unwrap();
+                    let (x, y) = block.random_transform_public_key().bytes_x_y();
+                    writeln!(w, "      random_transform_public_key: x={}, y={}", hex::encode(x), hex::encode(y)).unwrap();
+                    writeln!(w, "      encrypted_random_transform_temp_key: {}", hex::encode(block.encrypted_random_transform_temp_key().bytes())).unwrap();
+                }
+            }
+        }
+    }
+
     let _ = env_logger::try_init();
+    let start = Instant::now();
     let client = Client::new();
+    log::info!("Client creation: {:?}", start.elapsed());
+    let start = Instant::now();
     let server = ProxyReEncryptor::new();
+    log::info!("Server creation: {:?}", start.elapsed());
 
     let pt = Recrypt::new().gen_plaintext();
 
-    let encrypted = client.encrypt(&pt);
-    log::info!("{:?}", encrypted);
-    let (new_key, transform_key) = client.transform_key(&client.private_key);
+    let start = Instant::now();
+    let mut encrypted = client.encrypt(&pt);
+    log::info!("Initial encryption: {:?}", start.elapsed());
+    let mut buffer = Vec::new();
+    print_encrypted_value(&encrypted, &mut buffer);
+    log::info!("Initial: {}", String::from_utf8_lossy(&buffer));
 
-    let re_encrypted = server.transform(transform_key, encrypted);
-    log::info!("{:?}", re_encrypted);
-    let decrypted = client.decrypt(&new_key, re_encrypted.clone());
+    let mut current_key = client.private_key.clone();
+    const N: usize = 6;
 
-    assert_eq!(pt, decrypted);
+    for i in 0..N {
+        let start = Instant::now();
+        let (new_key, transform_key) = client.transform_key(&current_key);
+        log::info!("Transform key generation {}: {:?}", i + 1, start.elapsed());
 
-    let (new_key, transform_key) = client.transform_key(&new_key);
-
-    let re_encrypted = server.transform(transform_key, re_encrypted);
-    log::info!("{:?}", re_encrypted);
-    let decrypted = client.decrypt(&new_key, re_encrypted);
-    log::info!("{:?}", decrypted);
-
-    assert_eq!(pt, decrypted);
+        let start = Instant::now();
+        encrypted = server.transform(transform_key, encrypted);
+        log::info!("Transform operation {}: {:?}", i + 1, start.elapsed());
+        
+        let mut buffer = Vec::new();
+        print_encrypted_value(&encrypted, &mut buffer);
+        log::info!("Transform {}: {}", i + 1, String::from_utf8_lossy(&buffer));
+        
+        let start = Instant::now();
+        let decrypted = client.decrypt(&new_key, encrypted.clone());
+        log::info!("Decryption {}: {:?}", i + 1, start.elapsed());
+        assert_eq!(pt, decrypted);
+        
+        current_key = new_key;
+    }
 }
