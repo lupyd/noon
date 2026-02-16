@@ -1,2 +1,3 @@
 pub mod blind;
-pub mod pre;
+
+pub use blind::{BlindedMessage, Client, Server};

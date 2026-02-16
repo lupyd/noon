@@ -5,15 +5,18 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0.100"
-blstrs = "0.7.1"
 env_logger = "0.11.8"
-group = "0.13.0"
 hex = "0.4.3"
 log = "0.4.29"
 num-bigint-dig = { version = "0.8.6", features = ["rand"] }
 num-integer = "0.1.46"
 num-traits = "0.2.19"
 rand = "0.8"
-recrypt = "0.14.1"
 rsa = "0.9.10"
-tokio = { version = "1.49.0", features = ["full"] }
+
+[dev-dependencies]
+criterion = "0.5"
+
+[[bench]]
+name = "blind"
+harness = false

@@ -8,6 +8,7 @@ use rsa::{
     RsaPrivateKey,
     traits::{PrivateKeyParts, PublicKeyParts},
 };
+
 pub struct Server {
     private_key: RsaPrivateKey,
 }
@@ -24,17 +25,8 @@ impl Server {
     }
 }
 
-fn verify_identity(_identity: &str) -> bool {
-    // authentication logic
-    return true;
-}
-
 impl Server {
-    pub fn blind_sign(&self, payload: &[u8], identity: &str) -> Result<Vec<u8>, String> {
-        if !verify_identity(identity) {
-            return Err("Invalid identity".to_string());
-        }
-
+    pub fn blind_sign(&self, payload: &[u8]) -> Result<Vec<u8>, String> {
         let m_blinded = rsa::BigUint::from_bytes_le(payload);
         let d = self.private_key.d();
         let n = self.private_key.n();
@@ -141,7 +133,7 @@ fn test_blind_sign() {
         blinded_message.blinded_message()
     );
     let blinded_signature = server
-        .blind_sign(&blinded_message.blinded_message(), &alice.identity)
+        .blind_sign(&blinded_message.blinded_message())
         .unwrap();
     log::info!("Blinded Signature: {:X?}", blinded_signature);
     let signature =
