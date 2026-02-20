@@ -1,33 +1,34 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use noon::{Client, Server};
+use noon::blind::{BlindSigner, create_blinded_message, unblind_signature};
 
 fn benchmark_server_initialization(c: &mut Criterion) {
     c.bench_function("server_initialization", |b| {
         b.iter(|| {
-            black_box(Server::new());
+            black_box(BlindSigner::generate());
         });
     });
 }
 
 fn benchmark_create_blinded_message(c: &mut Criterion) {
-    let server = Server::new();
+    let server = BlindSigner::generate();
     let public_key = server.public_key();
-    let client = Client::new("alice");
     let payload = b"I vote for freedom";
 
     c.bench_function("create_blinded_message", |b| {
         b.iter(|| {
-            black_box(client.create_blinded_message(black_box(payload), black_box(&public_key)));
+            black_box(create_blinded_message(
+                black_box(payload),
+                black_box(&public_key),
+            ));
         });
     });
 }
 
 fn benchmark_blind_sign(c: &mut Criterion) {
-    let server = Server::new();
+    let server = BlindSigner::generate();
     let public_key = server.public_key();
-    let client = Client::new("alice");
     let payload = b"I vote for freedom";
-    let blinded_message = client.create_blinded_message(payload, &public_key);
+    let blinded_message = create_blinded_message(payload, &public_key);
 
     c.bench_function("blind_sign", |b| {
         b.iter(|| {
@@ -41,18 +42,17 @@ fn benchmark_blind_sign(c: &mut Criterion) {
 }
 
 fn benchmark_unblind_signature(c: &mut Criterion) {
-    let server = Server::new();
+    let server = BlindSigner::generate();
     let public_key = server.public_key();
-    let client = Client::new("alice");
     let payload = b"I vote for freedom";
-    let blinded_message = client.create_blinded_message(payload, &public_key);
+    let blinded_message = create_blinded_message(payload, &public_key);
     let blinded_signature = server
         .blind_sign(&blinded_message.blinded_message())
         .unwrap();
 
     c.bench_function("unblind_signature", |b| {
         b.iter(|| {
-            black_box(client.unblind_signature(
+            black_box(unblind_signature(
                 black_box(&blinded_message),
                 black_box(&blinded_signature),
                 black_box(&public_key),
@@ -62,15 +62,14 @@ fn benchmark_unblind_signature(c: &mut Criterion) {
 }
 
 fn benchmark_verify_signature(c: &mut Criterion) {
-    let server = Server::new();
+    let server = BlindSigner::generate();
     let public_key = server.public_key();
-    let client = Client::new("alice");
     let payload = b"I vote for freedom";
-    let blinded_message = client.create_blinded_message(payload, &public_key);
+    let blinded_message = create_blinded_message(payload, &public_key);
     let blinded_signature = server
         .blind_sign(&blinded_message.blinded_message())
         .unwrap();
-    let signature = client.unblind_signature(&blinded_message, &blinded_signature, &public_key);
+    let signature = unblind_signature(&blinded_message, &blinded_signature, &public_key);
 
     c.bench_function("verify_signature", |b| {
         b.iter(|| {
@@ -82,17 +81,15 @@ fn benchmark_verify_signature(c: &mut Criterion) {
 fn benchmark_full_blind_signature_flow(c: &mut Criterion) {
     c.bench_function("full_blind_signature_flow", |b| {
         b.iter(|| {
-            let server = Server::new();
+            let server = BlindSigner::generate();
             let public_key = server.public_key();
-            let client = Client::new("alice");
             let payload = b"I vote for freedom";
 
-            let blinded_message = client.create_blinded_message(payload, &public_key);
+            let blinded_message = create_blinded_message(payload, &public_key);
             let blinded_signature = server
                 .blind_sign(&blinded_message.blinded_message())
                 .unwrap();
-            let signature =
-                client.unblind_signature(&blinded_message, &blinded_signature, &public_key);
+            let signature = unblind_signature(&blinded_message, &blinded_signature, &public_key);
 
             black_box(server.verify(&blinded_message.message(), &signature));
         });
@@ -102,9 +99,8 @@ fn benchmark_full_blind_signature_flow(c: &mut Criterion) {
 // Benchmarks based on payload size
 fn benchmark_create_blinded_message_by_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("create_blinded_message_by_size");
-    let server = Server::new();
+    let server = BlindSigner::generate();
     let public_key = server.public_key();
-    let client = Client::new("alice");
 
     // Test with different payload sizes: 16B, 64B, 256B, 1KB, 4KB
     for size in [16, 64, 256, 1024, 4096].iter() {
@@ -112,9 +108,10 @@ fn benchmark_create_blinded_message_by_size(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
-                black_box(
-                    client.create_blinded_message(black_box(&payload), black_box(&public_key)),
-                );
+                black_box(create_blinded_message(
+                    black_box(&payload),
+                    black_box(&public_key),
+                ));
             });
         });
     }
@@ -123,13 +120,12 @@ fn benchmark_create_blinded_message_by_size(c: &mut Criterion) {
 
 fn benchmark_blind_sign_by_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("blind_sign_by_size");
-    let server = Server::new();
+    let server = BlindSigner::generate();
     let public_key = server.public_key();
-    let client = Client::new("alice");
 
     for size in [16, 64, 256, 1024, 4096].iter() {
         let payload = vec![0u8; *size];
-        let blinded_message = client.create_blinded_message(&payload, &public_key);
+        let blinded_message = create_blinded_message(&payload, &public_key);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
@@ -146,20 +142,19 @@ fn benchmark_blind_sign_by_size(c: &mut Criterion) {
 
 fn benchmark_unblind_signature_by_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("unblind_signature_by_size");
-    let server = Server::new();
+    let server = BlindSigner::generate();
     let public_key = server.public_key();
-    let client = Client::new("alice");
 
     for size in [16, 64, 256, 1024, 4096].iter() {
         let payload = vec![0u8; *size];
-        let blinded_message = client.create_blinded_message(&payload, &public_key);
+        let blinded_message = create_blinded_message(&payload, &public_key);
         let blinded_signature = server
             .blind_sign(&blinded_message.blinded_message())
             .unwrap();
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
-                black_box(client.unblind_signature(
+                black_box(unblind_signature(
                     black_box(&blinded_message),
                     black_box(&blinded_signature),
                     black_box(&public_key),
@@ -172,17 +167,16 @@ fn benchmark_unblind_signature_by_size(c: &mut Criterion) {
 
 fn benchmark_verify_signature_by_size(c: &mut Criterion) {
     let mut group = c.benchmark_group("verify_signature_by_size");
-    let server = Server::new();
+    let server = BlindSigner::generate();
     let public_key = server.public_key();
-    let client = Client::new("alice");
 
     for size in [16, 64, 256, 1024, 4096].iter() {
         let payload = vec![0u8; *size];
-        let blinded_message = client.create_blinded_message(&payload, &public_key);
+        let blinded_message = create_blinded_message(&payload, &public_key);
         let blinded_signature = server
             .blind_sign(&blinded_message.blinded_message())
             .unwrap();
-        let signature = client.unblind_signature(&blinded_message, &blinded_signature, &public_key);
+        let signature = unblind_signature(&blinded_message, &blinded_signature, &public_key);
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
@@ -203,16 +197,15 @@ fn benchmark_full_flow_by_size(c: &mut Criterion) {
 
         group.bench_with_input(BenchmarkId::from_parameter(size), size, |b, _| {
             b.iter(|| {
-                let server = Server::new();
+                let server = BlindSigner::generate();
                 let public_key = server.public_key();
-                let client = Client::new("alice");
 
-                let blinded_message = client.create_blinded_message(&payload, &public_key);
+                let blinded_message = create_blinded_message(&payload, &public_key);
                 let blinded_signature = server
                     .blind_sign(&blinded_message.blinded_message())
                     .unwrap();
                 let signature =
-                    client.unblind_signature(&blinded_message, &blinded_signature, &public_key);
+                    unblind_signature(&blinded_message, &blinded_signature, &public_key);
 
                 black_box(server.verify(&blinded_message.message(), &signature));
             });

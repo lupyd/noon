@@ -10,15 +10,17 @@ use rsa::{
     traits::{PrivateKeyParts, PublicKeyParts},
 };
 
-pub struct Server {
+pub struct BlindSigner {
     private_key: RsaPrivateKey,
 }
 
-impl Server {
-    pub fn new() -> Self {
-        Self {
-            private_key: RsaPrivateKey::new(&mut rand::rngs::OsRng::default(), 1024).unwrap(),
-        }
+impl BlindSigner {
+    pub fn generate() -> Self {
+        Self::new(RsaPrivateKey::new(&mut rand::rngs::OsRng::default(), 1024).unwrap())
+    }
+
+    pub fn new(private_key: RsaPrivateKey) -> Self {
+        Self { private_key }
     }
 
     pub fn public_key(&self) -> RsaPublicKey {
@@ -26,7 +28,7 @@ impl Server {
     }
 }
 
-impl Server {
+impl BlindSigner {
     pub fn blind_sign(&self, payload: &[u8]) -> Result<Vec<u8>, String> {
         let m_blinded = rsa::BigUint::from_bytes_le(payload);
         let d = self.private_key.d();
@@ -47,58 +49,37 @@ impl Server {
     }
 }
 
-pub struct Client {
-    identity: String,
+pub fn create_blinded_message(payload: &[u8], public_key: &RsaPublicKey) -> BlindedMessage {
+    let mut rng = rand::rngs::OsRng::default();
+    let n = public_key.n();
+    let e = public_key.e();
+    let r = loop {
+        let r = rng.gen_biguint_below(&n);
+
+        if r != BigUint::zero() && r.gcd(&n) == BigUint::one() {
+            break r;
+        }
+    };
+
+    let m = rsa::BigUint::from_bytes_le(payload);
+    let r_e = r.modpow(&e, &n);
+    let m_blinded = (&m * &r_e) % n;
+
+    BlindedMessage { r, m_blinded, m }
 }
 
-impl Client {
-    pub fn identity(&self) -> &str {
-        &self.identity
-    }
+pub fn unblind_signature(
+    blinded_message: &BlindedMessage,
+    blinded_signature: &[u8],
+    public_key: &RsaPublicKey,
+) -> Vec<u8> {
+    let s_blinded = BigUint::from_bytes_le(blinded_signature);
+    let n = public_key.n();
+    let r = &blinded_message.r;
+    let r_inv = r.mod_inverse(n).unwrap().to_biguint().unwrap();
+    let s = (&s_blinded * &r_inv) % n;
 
-    pub fn new(identity: impl Into<String>) -> Self {
-        Self {
-            identity: identity.into(),
-        }
-    }
-
-    pub fn create_blinded_message(
-        &self,
-        payload: &[u8],
-        public_key: &RsaPublicKey,
-    ) -> BlindedMessage {
-        let mut rng = rand::rngs::OsRng::default();
-        let n = public_key.n();
-        let e = public_key.e();
-        let r = loop {
-            let r = rng.gen_biguint_below(&n);
-
-            if r != BigUint::zero() && r.gcd(&n) == BigUint::one() {
-                break r;
-            }
-        };
-
-        let m = rsa::BigUint::from_bytes_le(payload);
-        let r_e = r.modpow(&e, &n);
-        let m_blinded = (&m * &r_e) % n;
-
-        BlindedMessage { r, m_blinded, m }
-    }
-
-    pub fn unblind_signature(
-        &self,
-        blinded_message: &BlindedMessage,
-        blinded_signature: &[u8],
-        public_key: &RsaPublicKey,
-    ) -> Vec<u8> {
-        let s_blinded = BigUint::from_bytes_le(blinded_signature);
-        let n = public_key.n();
-        let r = &blinded_message.r;
-        let r_inv = r.mod_inverse(n).unwrap().to_biguint().unwrap();
-        let s = (&s_blinded * &r_inv) % n;
-
-        s.to_bytes_le()
-    }
+    s.to_bytes_le()
 }
 
 #[derive(Debug)]
@@ -122,8 +103,7 @@ fn test_blind_sign() {
     use rand::RngCore;
     let _ = env_logger::try_init();
 
-    let alice = Client::new("alice");
-    let server = Server::new();
+    let server = BlindSigner::generate();
 
     let server_public_key = server.public_key();
 
@@ -138,7 +118,7 @@ fn test_blind_sign() {
             .try_fill_bytes(&mut payload)
             .unwrap();
 
-        let blinded_message = alice.create_blinded_message(&payload, &server_public_key);
+        let blinded_message = create_blinded_message(&payload, &server_public_key);
 
         log::info!("Message: {:X?}Blinded Message", blinded_message.message(),);
         log::info!("Blinded Message: {:X?}", blinded_message.blinded_message());
@@ -146,8 +126,7 @@ fn test_blind_sign() {
             .blind_sign(&blinded_message.blinded_message())
             .unwrap();
         log::info!("Blinded Signature: {:X?}", blinded_signature);
-        let signature =
-            alice.unblind_signature(&blinded_message, &blinded_signature, &server_public_key);
+        let signature = unblind_signature(&blinded_message, &blinded_signature, &server_public_key);
         log::info!("Signature: {:X?}", signature);
 
         assert!(server.verify(&blinded_message.message(), &signature));
