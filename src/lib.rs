@@ -1,1 +1,3 @@
-pub mod blind;
+mod blind;
+
+pub use blind::*;

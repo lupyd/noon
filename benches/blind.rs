@@ -1,5 +1,5 @@
 use criterion::{BenchmarkId, Criterion, black_box, criterion_group, criterion_main};
-use noon::blind::{BlindSigner, create_blinded_message, unblind_signature};
+use noon::{BlindSigner, create_blinded_message, unblind_signature};
 
 fn benchmark_server_initialization(c: &mut Criterion) {
     c.bench_function("server_initialization", |b| {
