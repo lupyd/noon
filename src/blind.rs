@@ -3,6 +3,7 @@ use num_bigint_dig::ModInverse;
 use num_bigint_dig::RandBigInt;
 use num_integer::Integer;
 use num_traits::{One, Zero};
+
 use rsa::RsaPublicKey;
 use rsa::{
     RsaPrivateKey,
@@ -42,7 +43,7 @@ impl Server {
 
         let m_check = s.modpow(&self.private_key.e(), &n);
 
-        m_check == rsa::BigUint::from_bytes_le(payload)
+        m_check == rsa::BigUint::from_bytes_le(payload) % n
     }
 }
 
@@ -118,29 +119,39 @@ impl BlindedMessage {
 
 #[test]
 fn test_blind_sign() {
+    use rand::RngCore;
     let _ = env_logger::try_init();
 
     let alice = Client::new("alice");
     let server = Server::new();
 
     let server_public_key = server.public_key();
-    let blinded_message =
-        alice.create_blinded_message("I vote for freedom".as_bytes(), &server_public_key);
 
-    log::info!(
-        "Message: {:X?}, Blinded Message: {:X?}",
-        blinded_message.message(),
-        blinded_message.blinded_message()
-    );
-    let blinded_signature = server
-        .blind_sign(&blinded_message.blinded_message())
+    let batch_size = std::env::var("BATCH_SIZE")
+        .map(|x| x.parse().unwrap_or(1))
         .unwrap();
-    log::info!("Blinded Signature: {:X?}", blinded_signature);
-    let signature =
-        alice.unblind_signature(&blinded_message, &blinded_signature, &server_public_key);
-    log::info!("Signature: {:X?}", signature);
+    for i in 0..batch_size {
+        log::info!("Batch ID: {}", i);
+        let mut payload = vec![0u8; 2048];
 
-    assert!(server.verify(&blinded_message.message(), &signature));
-    assert!(!server.verify(&blinded_message.message(), &blinded_signature));
-    assert!(server.verify(&blinded_message.blinded_message(), &blinded_signature));
+        rand::rngs::OsRng::default()
+            .try_fill_bytes(&mut payload)
+            .unwrap();
+
+        let blinded_message = alice.create_blinded_message(&payload, &server_public_key);
+
+        log::info!("Message: {:X?}Blinded Message", blinded_message.message(),);
+        log::info!("Blinded Message: {:X?}", blinded_message.blinded_message());
+        let blinded_signature = server
+            .blind_sign(&blinded_message.blinded_message())
+            .unwrap();
+        log::info!("Blinded Signature: {:X?}", blinded_signature);
+        let signature =
+            alice.unblind_signature(&blinded_message, &blinded_signature, &server_public_key);
+        log::info!("Signature: {:X?}", signature);
+
+        assert!(server.verify(&blinded_message.message(), &signature));
+        assert!(!server.verify(&blinded_message.message(), &blinded_signature));
+        assert!(server.verify(&blinded_message.blinded_message(), &blinded_signature));
+    }
 }
