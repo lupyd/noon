@@ -1,22 +1,14 @@
-[package]
-name = "noon"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = [
+    "crates/core",
+    "crates/server",
+]
 
-[dependencies]
-anyhow = "1.0.100"
-env_logger = "0.11.8"
-hex = "0.4.3"
-log = "0.4.29"
-num-bigint-dig = { version = "0.8.6", features = ["rand"] }
-num-integer = "0.1.46"
-num-traits = "0.2.19"
-rand = "0.8"
-rsa = "0.9.10"
+resolver = "3"
 
-[dev-dependencies]
-criterion = "0.5"
 
-[[bench]]
-name = "blind"
-harness = false
+
+[workspace.dependencies]
+noon-core = { path = "crates/core" }
+noon-server = { path = "crates/server" }
+
