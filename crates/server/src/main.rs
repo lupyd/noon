@@ -7,6 +7,7 @@ use hyper_util::rt::TokioIo;
 
 mod auth;
 mod lupyd_token;
+mod pb;
 mod shared_data;
 mod utils;
 
@@ -105,7 +106,6 @@ pub fn not_found_response() -> Resp {
 pub fn payload_too_large_response() -> Resp {
     build_response(StatusCode::PAYLOAD_TOO_LARGE, PAYLOAD_TOO_LARGE_STR)
 }
-
 #[inline(always)]
 #[allow(unused)]
 pub fn unimplemented_response() -> Resp {

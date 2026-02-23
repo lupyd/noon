@@ -15,6 +15,7 @@ hyper = { version = "1.8.1", features = ["full"] }
 hyper-util = { version = "0.1.20", features = ["full"] }
 lazy_static = "1.5.0"
 log = "0.4.29"
+quick-protobuf = "0.8.1"
 reqwest = { version = "0.13.2" }
 ring = "0.17.14"
 serde = { version = "1.0.228", features = ["derive"] }
@@ -22,3 +23,6 @@ serde_json = "1.0.149"
 thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["full"] }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+
+[build-dependencies]
+pb-rs = "0.10.0"
