@@ -1,7 +1,16 @@
+use std::str::FromStr;
+
+use deadpool_postgres::{
+    Manager,
+    tokio_postgres::{self, Config, NoTls, config::SslMode},
+};
+
 use crate::auth::AuthZeroTokenVerifier;
 
 pub struct SharedData {
-    auth: AuthZeroTokenVerifier,
+    pub auth: AuthZeroTokenVerifier,
+
+    pub db: deadpool_postgres::Pool,
 }
 
 impl SharedData {
@@ -14,6 +23,56 @@ impl SharedData {
 
         let auth = AuthZeroTokenVerifier::new(issuer, domain, audience);
 
-        Self { auth }
+        let pool = build_pool();
+
+        Self { auth, db: pool }
     }
+}
+
+fn build_pool() -> deadpool_postgres::Pool {
+    let conn_str = std::env::var("DB_CONN_STR").expect("Missing DB_CONN_STR env var");
+
+    let mut config = Config::from_str(&conn_str).unwrap();
+
+    let manager_config = deadpool_postgres::ManagerConfig {
+        recycling_method: deadpool_postgres::RecyclingMethod::Fast,
+    };
+
+    let manager = if config.get_ssl_mode() == SslMode::Disable {
+        Manager::from_config(config, NoTls, manager_config)
+    } else {
+        let tls_config = postgres_tls_config(&std::env::var("DB_CERT").ok()).unwrap();
+        let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
+
+        config.ssl_mode(tokio_postgres::config::SslMode::Require);
+        Manager::from_config(config, tls, manager_config)
+    };
+
+    let pool_size = std::env::var("DB_POOL_SIZE")
+        .map(|s| s.parse::<usize>().unwrap_or(100))
+        .unwrap_or(100);
+
+    let pool = deadpool_postgres::Pool::builder(manager)
+        .max_size(pool_size)
+        .build()
+        .unwrap();
+
+    pool
+}
+
+fn postgres_tls_config(cert_path: &Option<String>) -> anyhow::Result<rustls::ClientConfig> {
+    let mut store = rustls::RootCertStore::empty();
+    if let Some(cert_path) = cert_path {
+        let f = std::fs::File::open(cert_path)?;
+        let mut reader = std::io::BufReader::new(f);
+
+        for cert in rustls_pemfile::certs(&mut reader) {
+            store.add(cert?)?;
+        }
+        log::info!("Using {} certs from {cert_path}", store.roots.len());
+    }
+
+    Ok(rustls::ClientConfig::builder()
+        .with_root_certificates(store)
+        .with_no_client_auth())
 }

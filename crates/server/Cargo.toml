@@ -16,13 +16,20 @@ hyper-util = { version = "0.1.20", features = ["full"] }
 lazy_static = "1.5.0"
 log = "0.4.29"
 quick-protobuf = "0.8.1"
+rand = "0.8"
 reqwest = { version = "0.13.2" }
 ring = "0.17.14"
+rustls = "0.23.36"
+rustls-pemfile = "2.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["full"] }
+tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
+tokio-postgres-rustls = "0.13.0"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
+noon-core = { path = "../core" }
+rsa = { version = "0.9.10", features = ["sha2"] }
 
 [build-dependencies]
 pb-rs = "0.10.0"

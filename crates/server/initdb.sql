@@ -14,7 +14,8 @@ CREATE TABLE IF NOT EXISTS forms (
     description TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     owner VARCHAR NOT NULL,
-    fields JSONB NOT NULL
+    fields JSONB NOT NULL,
+    is_anonymous BOOLEAN NOT NULL DEFAULT FALSE
 );
 
 CREATE INDEX IF NOT EXISTS idx_forms_owner ON forms(owner);
@@ -31,5 +32,6 @@ CREATE TABLE IF NOT EXISTS form_allowed_participants (
 CREATE TABLE IF NOT EXISTS form_submissions (
     form_id BIGINT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
     data JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    username VARCHAR
 );

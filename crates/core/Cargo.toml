@@ -16,7 +16,7 @@ num-bigint-dig = { version = "0.8.6", features = ["rand"] }
 num-integer = "0.1.46"
 num-traits = "0.2.19"
 rand = "0.8"
-rsa = "0.9.10"
+rsa = { version = "0.9.10", features = ["sha2"] }
 
 [dev-dependencies]
 criterion = "0.5"

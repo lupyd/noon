@@ -6,6 +6,8 @@ use hyper::{Request, Response, StatusCode, body::Incoming, header, service::serv
 use hyper_util::rt::TokioIo;
 
 mod auth;
+mod forms_db;
+mod forms_routes;
 mod lupyd_token;
 mod pb;
 mod shared_data;
@@ -174,11 +176,13 @@ async fn service(
     request: Request<Incoming>,
     sd: Arc<SharedData>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
-    let uri = request.uri();
+    let path = request.uri().path().to_string();
 
-    let path = uri.path();
+    if path.starts_with("/forms/") {
+        return forms_routes::handle_request(request, sd, &path).await;
+    }
 
-    match path {
+    match path.as_str() {
         "/health" => {
             let response = ok_response("OK");
             Ok(response)
