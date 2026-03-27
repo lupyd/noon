@@ -1,5 +1,7 @@
 # Noon
 
+![Noon Logo](assets/noon.webp)
+
 Anonymous form suite powered by blind signature cryptography.
 
 ## Overview
