@@ -10,6 +10,7 @@ use std::sync::Arc;
 use crate::auth::TokenVerificationError;
 use crate::forms_db;
 use crate::pb::forms::{Form, FormSubmission};
+use crate::response_builder;
 use crate::shared_data::SharedData;
 use crate::{
     bad_request_response, build_response, internal_error_response, limit_and_collect,
@@ -66,7 +67,9 @@ async fn create_form_route(
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     let auth_token = match sd.auth.verify_from_headers(req.headers()).await {
         Ok(t) => t,
-        Err(_) => return Ok(unauthorized_response()),
+        Err(err) => {
+            return Ok(build_response(StatusCode::UNAUTHORIZED, format!("{}", err)));
+        }
     };
 
     let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
@@ -148,7 +151,7 @@ async fn submit_form_route(
 
     let auth_token = match sd.auth.verify_from_headers(req.headers()).await {
         Ok(t) => t,
-        Err(_) => return Ok(unauthorized_response()),
+        Err(err) => return Ok(build_response(StatusCode::UNAUTHORIZED, format!("{}", err))),
     };
 
     // Need to verify participation if form restricts it

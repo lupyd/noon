@@ -114,10 +114,8 @@ fn full_body(body: impl Into<Bytes>) -> Full<Bytes> {
 }
 
 pub fn response_builder() -> hyper::http::response::Builder {
-    let allow_origin = "*";
-
     Response::builder()
-        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, allow_origin)
+        .header(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*")
         .header(
             header::ACCESS_CONTROL_ALLOW_METHODS,
             "GET, POST, PUT, DELETE, OPTIONS, PATCH",
@@ -126,7 +124,6 @@ pub fn response_builder() -> hyper::http::response::Builder {
             header::ACCESS_CONTROL_ALLOW_HEADERS,
             "authorization, content-type",
         )
-        .header(header::ACCESS_CONTROL_ALLOW_CREDENTIALS, "true")
 }
 
 #[inline(always)]
@@ -158,6 +155,10 @@ pub async fn service(
     request: Request<Incoming>,
     sd: Arc<SharedData>,
 ) -> Result<Response<Full<Bytes>>, Infallible> {
+    if request.method() == hyper::Method::OPTIONS {
+        return Ok(option_response());
+    }
+
     let path = request.uri().path().to_string();
 
     if path.starts_with("/forms/") {

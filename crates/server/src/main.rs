@@ -3,10 +3,17 @@ use noon_server::start_http_server;
 #[tokio::main]
 async fn main() {
     println!("Noon Server v{}", env!("CARGO_PKG_VERSION"));
+
+    if let Err(err) = dotenv::dotenv() {
+        eprintln!("failed to load dotenv {}", err);
+    }
+
     init_logger();
     let port = std::env::var("PORT")
         .map(|e| e.parse().unwrap_or(39210))
         .unwrap_or(39210);
+
+    log::info!("log initialized");
     start_http_server(port).await.unwrap();
 }
 

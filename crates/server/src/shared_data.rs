@@ -21,6 +21,13 @@ impl SharedData {
         let domain = var("AUTHZERO_DOMAIN").unwrap_or("lupyd.com".to_string());
         let audience = var("AUTHZERO_AUDIENCE").unwrap_or("https://lupyd.com".to_string());
 
+        log::info!(
+            "using auth0: issuer: {}, domain: {}, audience: {}",
+            issuer,
+            domain,
+            audience
+        );
+
         let auth = AuthZeroTokenVerifier::new(issuer, domain, audience);
 
         let pool = build_pool();
