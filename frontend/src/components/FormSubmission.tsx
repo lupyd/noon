@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { decodeForm, encodeFormSubmission } from '../proto';
-import { Send, CheckCircle, AlertCircle, Lock } from 'lucide-react';
+import { decodeForm, encodeFormSubmission, encodeOtpRequest, encodeOtpVerify, encodeEmailVerificationRequest, encodeEmailVerificationVerify } from '../proto';
+import { Send, CheckCircle, AlertCircle, Lock, Mail, Shield } from 'lucide-react';
 import { useAuth0 } from '@auth0/auth0-react';
 import * as mycrypto from '../crypto';
 
@@ -14,6 +14,14 @@ export const FormSubmission: React.FC = () => {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  
+  const [userEmail, setUserEmail] = useState('');
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
+  const [emailVerifyCode, setEmailVerifyCode] = useState('');
+  const [showEmailVerify, setShowEmailVerify] = useState(false);
+  const [otpCode, setOtpCode] = useState('');
+  const [showOtpInput, setShowOtpInput] = useState(false);
+  const [otpVerified, setOtpVerified] = useState(false);
 
   useEffect(() => {
     const fetchForm = async () => {
@@ -53,6 +61,75 @@ export const FormSubmission: React.FC = () => {
       ...prev,
       [fieldName]: { [type]: value }
     }));
+  };
+
+  const requestEmailVerification = async () => {
+    if (!userEmail) return;
+    try {
+      const encoded = encodeEmailVerificationRequest({ email: userEmail });
+      const response = await fetch('http://localhost:39210/email/request_verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        // @ts-ignore
+        body: encoded,
+      });
+      if (!response.ok) throw new Error('Failed to send verification email');
+      setShowEmailVerify(true);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const verifyEmail = async () => {
+    if (!userEmail || !emailVerifyCode) return;
+    try {
+      const encoded = encodeEmailVerificationVerify({ email: userEmail, code: emailVerifyCode });
+      const response = await fetch('http://localhost:39210/email/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        // @ts-ignore
+        body: encoded,
+      });
+      if (!response.ok) throw new Error('Invalid verification code');
+      setVerifiedEmail(userEmail);
+      setShowEmailVerify(false);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const requestOtp = async () => {
+    if (!verifiedEmail) return;
+    try {
+      const encoded = encodeOtpRequest({ email: verifiedEmail, formId: parseInt(id!) });
+      const response = await fetch(`http://localhost:39210/forms/${id}/request_otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        // @ts-ignore
+        body: encoded,
+      });
+      if (!response.ok) throw new Error('Failed to request OTP');
+      setShowOtpInput(true);
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+
+  const verifyOtp = async () => {
+    if (!verifiedEmail || !otpCode) return;
+    try {
+      const encoded = encodeOtpVerify({ email: verifiedEmail, code: otpCode, formId: parseInt(id!) });
+      const response = await fetch(`http://localhost:39210/forms/${id}/verify_otp`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        // @ts-ignore
+        body: encoded,
+      });
+      if (!response.ok) throw new Error('Invalid OTP');
+      setOtpVerified(true);
+    } catch (err) {
+      setError((err as Error).message);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -131,6 +208,35 @@ export const FormSubmission: React.FC = () => {
 
         if (!submitRes.ok) throw new Error(await submitRes.text() || "Failed to submit blind form");
 
+      } else if (form.use_email_only) {
+        if (!verifiedEmail) {
+          setError('Please verify your email first');
+          setIsSubmitting(false);
+          return;
+        }
+        
+        if (form.requires_otp_verification && !otpVerified) {
+          setError('Please verify OTP first');
+          setIsSubmitting(false);
+          return;
+        }
+
+        const headers: Record<string, string> = {
+          'Content-Type': 'application/octet-stream',
+          'Authorization': `EmailOnly ${verifiedEmail}`,
+        };
+
+        const response = await fetch(`http://localhost:39210/forms/${id}/submit`, {
+          method: 'POST',
+          headers,
+          // @ts-ignore - TS complains about Uint8Array with SharedArrayBuffer
+          body: encoded,
+        });
+
+        if (!response.ok) {
+          const text = await response.text();
+          throw new Error(text || 'Failed to submit form');
+        }
       } else {
         const headers: Record<string, string> = {
           'Content-Type': 'application/octet-stream',
@@ -187,8 +293,80 @@ export const FormSubmission: React.FC = () => {
             <Lock size={14} /> Anonymous Form (Blind Signed)
           </div>
         )}
+        {form.use_email_only && (
+          <div className="anonymous-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'var(--secondary-light)', color: 'var(--secondary)', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem', marginBottom: '1rem', marginTop: '0.5rem' }}>
+            <Mail size={14} /> Email-Only Form
+          </div>
+        )}
         <p className="description">{form.description}</p>
       </div>
+
+      {form.use_email_only && !verifiedEmail && (
+        <div className="card" style={{ marginBottom: '1.5rem', border: '1px solid var(--secondary)', background: 'var(--secondary-light)' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 0 }}>
+            <Mail size={18} /> Verify Your Email
+          </h3>
+          {!showEmailVerify ? (
+            <>
+              <div className="form-group">
+                <label>Your Email</label>
+                <input 
+                  type="email" 
+                  value={userEmail} 
+                  onChange={(e) => setUserEmail(e.target.value)}
+                  placeholder="your@email.com"
+                />
+              </div>
+              <button onClick={requestEmailVerification} className="primary-button">
+                Send Verification Code
+              </button>
+            </>
+          ) : (
+            <>
+              <div className="form-group">
+                <label>Verification Code</label>
+                <input 
+                  type="text" 
+                  value={emailVerifyCode} 
+                  onChange={(e) => setEmailVerifyCode(e.target.value)}
+                  placeholder="123456"
+                />
+              </div>
+              <button onClick={verifyEmail} className="primary-button">
+                Verify Email
+              </button>
+            </>
+          )}
+        </div>
+      )}
+
+      {form.use_email_only && verifiedEmail && form.requires_otp_verification && !otpVerified && (
+        <div className="card" style={{ marginBottom: '1.5rem', border: '1px solid var(--secondary)', background: 'var(--secondary-light)' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 0 }}>
+            <Shield size={18} /> OTP Verification Required
+          </h3>
+          {!showOtpInput ? (
+            <button onClick={requestOtp} className="primary-button">
+              Request OTP
+            </button>
+          ) : (
+            <>
+              <div className="form-group">
+                <label>OTP Code</label>
+                <input 
+                  type="text" 
+                  value={otpCode} 
+                  onChange={(e) => setOtpCode(e.target.value)}
+                  placeholder="123456"
+                />
+              </div>
+              <button onClick={verifyOtp} className="primary-button">
+                Verify OTP
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="submission-fields">
         {form.fields.map((field: any) => (

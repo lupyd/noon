@@ -6,9 +6,11 @@ pub use hyper::{Request, Response, StatusCode, body::Incoming, header, service::
 use hyper_util::rt::TokioIo;
 
 pub mod auth;
+pub mod email;
 pub mod forms_db;
 pub mod forms_routes;
 pub mod lupyd_token;
+pub mod otp;
 pub mod pb;
 pub mod shared_data;
 pub mod utils;

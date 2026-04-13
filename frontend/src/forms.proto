@@ -35,6 +35,9 @@ message Form {
     repeated Field fields = 8;
     repeated string allowed_participants = 10;
     bool is_anonymous = 11;
+    repeated string mentioned_emails = 12;
+    bool requires_otp_verification = 13;
+    bool use_email_only = 14;
   
     message Field {
         FieldType type = 1;
@@ -73,4 +76,24 @@ message FieldValue {
         bool bool_value = 4;
         uint64 bitmask_value = 5;
     }
+}
+
+message OtpRequest {
+    string email = 1;
+    uint64 form_id = 2;
+}
+
+message OtpVerify {
+    string email = 1;
+    string code = 2;
+    uint64 form_id = 3;
+}
+
+message EmailVerificationRequest {
+    string email = 1;
+}
+
+message EmailVerificationVerify {
+    string email = 1;
+    string code = 2;
 }

@@ -3,13 +3,18 @@ import { useAuth0 } from '@auth0/auth0-react';
 import { FormBuilder } from './components/FormBuilder';
 import { FormSubmission } from './components/FormSubmission';
 import { LogIn, LogOut } from 'lucide-react';
+import { SunLogo } from './components/logo';
 import './App.css';
 
 function Home() {
   return (
     <div className="home card animate-fade-in">
       <div className="hero">
-        <img src="/noon.webp" alt="Noon Forms" className="hero-logo" />
+        <div className="noon-logo noon-logo-hero">
+          <span>N</span>
+          <SunLogo height={128} />
+          <span>N</span>
+        </div>
         <h1>Welcome to Noon Forms</h1>
         <p>Create beautiful, secure, and anonymous forms in seconds.</p>
         <div className="home-actions">
@@ -28,7 +33,13 @@ function App() {
       <div className="App">
         <header className="navbar">
           <div className="container">
-            <Link to="/" className="logo"><img src="/noon.webp" alt="Noon Forms" /></Link>
+            <Link to="/" className="logo">
+              <div className="noon-logo">
+                <span>N</span>
+                <SunLogo height={40} />
+                <span>N</span>
+              </div>
+            </Link>
             <nav style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
               <Link to="/create" style={{ marginLeft: 0 }}>Build</Link>
               <a href="http://localhost:39210/health" target="_blank" rel="noreferrer" style={{ marginLeft: 0 }}>Status</a>

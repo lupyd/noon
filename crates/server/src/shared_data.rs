@@ -1,16 +1,18 @@
 use std::str::FromStr;
 
 use deadpool_postgres::{
+    tokio_postgres::{self, config::SslMode, Config, NoTls},
     Manager,
-    tokio_postgres::{self, Config, NoTls, config::SslMode},
 };
 
 use crate::auth::AuthZeroTokenVerifier;
+use crate::email::Emailer;
 
 pub struct SharedData {
     pub auth: AuthZeroTokenVerifier,
-
     pub db: deadpool_postgres::Pool,
+    pub emailer: Option<Emailer>,
+    pub skip_email_sending: bool,
 }
 
 impl SharedData {
@@ -32,7 +34,35 @@ impl SharedData {
 
         let pool = build_pool();
 
-        Self { auth, db: pool }
+        let skip_email_sending = var("SKIP_EMAIL_SENDING")
+            .map(|s| s.to_lowercase() == "true")
+            .unwrap_or(false);
+
+        let emailer = if skip_email_sending {
+            log::info!("SKIP_EMAIL_SENDING is set to true. Emailer will be disabled.");
+            None
+        } else {
+            match Emailer::new() {
+                Ok(e) => {
+                    log::info!("Emailer initialized successfully");
+                    Some(e)
+                }
+                Err(e) => {
+                    log::warn!(
+                        "Failed to initialize emailer: {}. SMTP features will be disabled.",
+                        e
+                    );
+                    None
+                }
+            }
+        };
+
+        Self {
+            auth,
+            db: pool,
+            emailer,
+            skip_email_sending,
+        }
     }
 }
 

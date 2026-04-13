@@ -163,6 +163,9 @@ pub struct Form<'a> {
     pub fields: Vec<mod_Form::Field<'a>>,
     pub allowed_participants: Vec<Cow<'a, str>>,
     pub is_anonymous: bool,
+    pub mentioned_emails: Vec<Cow<'a, str>>,
+    pub requires_otp_verification: bool,
+    pub use_email_only: bool,
 }
 
 impl<'a> MessageRead<'a> for Form<'a> {
@@ -179,6 +182,9 @@ impl<'a> MessageRead<'a> for Form<'a> {
                 Ok(66) => msg.fields.push(r.read_message::<mod_Form::Field>(bytes)?),
                 Ok(82) => msg.allowed_participants.push(r.read_string(bytes).map(Cow::Borrowed)?),
                 Ok(88) => msg.is_anonymous = r.read_bool(bytes)?,
+                Ok(98) => msg.mentioned_emails.push(r.read_string(bytes).map(Cow::Borrowed)?),
+                Ok(104) => msg.requires_otp_verification = r.read_bool(bytes)?,
+                Ok(112) => msg.use_email_only = r.read_bool(bytes)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -199,6 +205,9 @@ impl<'a> MessageWrite for Form<'a> {
         + self.fields.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
         + self.allowed_participants.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
         + if self.is_anonymous == false { 0 } else { 1 + sizeof_varint(*(&self.is_anonymous) as u64) }
+        + self.mentioned_emails.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
+        + if self.requires_otp_verification == false { 0 } else { 1 + sizeof_varint(*(&self.requires_otp_verification) as u64) }
+        + if self.use_email_only == false { 0 } else { 1 + sizeof_varint(*(&self.use_email_only) as u64) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
@@ -211,6 +220,9 @@ impl<'a> MessageWrite for Form<'a> {
         for s in &self.fields { w.write_with_tag(66, |w| w.write_message(s))?; }
         for s in &self.allowed_participants { w.write_with_tag(82, |w| w.write_string(&**s))?; }
         if self.is_anonymous != false { w.write_with_tag(88, |w| w.write_bool(*&self.is_anonymous))?; }
+        for s in &self.mentioned_emails { w.write_with_tag(98, |w| w.write_string(&**s))?; }
+        if self.requires_otp_verification != false { w.write_with_tag(104, |w| w.write_bool(*&self.requires_otp_verification))?; }
+        if self.use_email_only != false { w.write_with_tag(112, |w| w.write_bool(*&self.use_email_only))?; }
         Ok(())
     }
 }
@@ -465,5 +477,149 @@ impl<'a> Default for OneOfvalue<'a> {
     }
 }
 
+}
+
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct OtpRequest<'a> {
+    pub email: Cow<'a, str>,
+    pub form_id: u64,
+}
+
+impl<'a> MessageRead<'a> for OtpRequest<'a> {
+    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
+        let mut msg = Self::default();
+        while !r.is_eof() {
+            match r.next_tag(bytes) {
+                Ok(10) => msg.email = r.read_string(bytes).map(Cow::Borrowed)?,
+                Ok(16) => msg.form_id = r.read_uint64(bytes)?,
+                Ok(t) => { r.read_unknown(bytes, t)?; }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(msg)
+    }
+}
+
+impl<'a> MessageWrite for OtpRequest<'a> {
+    fn get_size(&self) -> usize {
+        0
+        + if self.email == "" { 0 } else { 1 + sizeof_len((&self.email).len()) }
+        + if self.form_id == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.form_id) as u64) }
+    }
+
+    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
+        if self.email != "" { w.write_with_tag(10, |w| w.write_string(&**&self.email))?; }
+        if self.form_id != 0u64 { w.write_with_tag(16, |w| w.write_uint64(*&self.form_id))?; }
+        Ok(())
+    }
+}
+
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct OtpVerify<'a> {
+    pub email: Cow<'a, str>,
+    pub code: Cow<'a, str>,
+    pub form_id: u64,
+}
+
+impl<'a> MessageRead<'a> for OtpVerify<'a> {
+    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
+        let mut msg = Self::default();
+        while !r.is_eof() {
+            match r.next_tag(bytes) {
+                Ok(10) => msg.email = r.read_string(bytes).map(Cow::Borrowed)?,
+                Ok(18) => msg.code = r.read_string(bytes).map(Cow::Borrowed)?,
+                Ok(24) => msg.form_id = r.read_uint64(bytes)?,
+                Ok(t) => { r.read_unknown(bytes, t)?; }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(msg)
+    }
+}
+
+impl<'a> MessageWrite for OtpVerify<'a> {
+    fn get_size(&self) -> usize {
+        0
+        + if self.email == "" { 0 } else { 1 + sizeof_len((&self.email).len()) }
+        + if self.code == "" { 0 } else { 1 + sizeof_len((&self.code).len()) }
+        + if self.form_id == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.form_id) as u64) }
+    }
+
+    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
+        if self.email != "" { w.write_with_tag(10, |w| w.write_string(&**&self.email))?; }
+        if self.code != "" { w.write_with_tag(18, |w| w.write_string(&**&self.code))?; }
+        if self.form_id != 0u64 { w.write_with_tag(24, |w| w.write_uint64(*&self.form_id))?; }
+        Ok(())
+    }
+}
+
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct EmailVerificationRequest<'a> {
+    pub email: Cow<'a, str>,
+}
+
+impl<'a> MessageRead<'a> for EmailVerificationRequest<'a> {
+    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
+        let mut msg = Self::default();
+        while !r.is_eof() {
+            match r.next_tag(bytes) {
+                Ok(10) => msg.email = r.read_string(bytes).map(Cow::Borrowed)?,
+                Ok(t) => { r.read_unknown(bytes, t)?; }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(msg)
+    }
+}
+
+impl<'a> MessageWrite for EmailVerificationRequest<'a> {
+    fn get_size(&self) -> usize {
+        0
+        + if self.email == "" { 0 } else { 1 + sizeof_len((&self.email).len()) }
+    }
+
+    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
+        if self.email != "" { w.write_with_tag(10, |w| w.write_string(&**&self.email))?; }
+        Ok(())
+    }
+}
+
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct EmailVerificationVerify<'a> {
+    pub email: Cow<'a, str>,
+    pub code: Cow<'a, str>,
+}
+
+impl<'a> MessageRead<'a> for EmailVerificationVerify<'a> {
+    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
+        let mut msg = Self::default();
+        while !r.is_eof() {
+            match r.next_tag(bytes) {
+                Ok(10) => msg.email = r.read_string(bytes).map(Cow::Borrowed)?,
+                Ok(18) => msg.code = r.read_string(bytes).map(Cow::Borrowed)?,
+                Ok(t) => { r.read_unknown(bytes, t)?; }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(msg)
+    }
+}
+
+impl<'a> MessageWrite for EmailVerificationVerify<'a> {
+    fn get_size(&self) -> usize {
+        0
+        + if self.email == "" { 0 } else { 1 + sizeof_len((&self.email).len()) }
+        + if self.code == "" { 0 } else { 1 + sizeof_len((&self.code).len()) }
+    }
+
+    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
+        if self.email != "" { w.write_with_tag(10, |w| w.write_string(&**&self.email))?; }
+        if self.code != "" { w.write_with_tag(18, |w| w.write_string(&**&self.code))?; }
+        Ok(())
+    }
 }
 

@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
-import { Plus, Trash2, Send, CheckCircle, Copy, LogIn } from 'lucide-react';
-import { encodeForm } from '../proto';
+import { Plus, Trash2, Send, CheckCircle, Copy, LogIn, Mail } from 'lucide-react';
+import { encodeForm, encodeEmailVerificationRequest, encodeEmailVerificationVerify } from '../proto';
 
 interface Field {
   type: number;
@@ -33,6 +33,14 @@ export const FormBuilder: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdFormId, setCreatedFormId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  
+  const [useEmailOnly, setUseEmailOnly] = useState(false);
+  const [mentionedEmails, setMentionedEmails] = useState('');
+  const [requiresOtpVerification, setRequiresOtpVerification] = useState(false);
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
+  const [emailVerificationCode, setEmailVerificationCode] = useState('');
+  const [showEmailVerifyInput, setShowEmailVerifyInput] = useState(false);
+  const [emailVerifyError, setEmailVerifyError] = useState<string | null>(null);
 
   const addField = () => {
     const fieldName = `field_${fields.length + 1}`;
@@ -66,8 +74,18 @@ export const FormBuilder: React.FC = () => {
       return;
     }
 
+    if (useEmailOnly && !verifiedEmail) {
+      setError('Please verify your email before creating an email-only form.');
+      return;
+    }
+
     setIsSubmitting(true);
     setError(null);
+
+    const mentionedEmailsArray = mentionedEmails
+      .split(',')
+      .map(e => e.trim())
+      .filter(e => e.length > 0);
 
     const formPayload = {
       name,
@@ -80,24 +98,33 @@ export const FormBuilder: React.FC = () => {
         placeholder: f.placeholder,
         helpText: f.helpText,
       })),
-      isAnonymous: false, // Defaulting to false for now
+      isAnonymous: false,
+      useEmailOnly,
+      mentionedEmails: mentionedEmailsArray,
+      requiresOtpVerification: useEmailOnly && requiresOtpVerification,
     };
 
     try {
       const encoded = encodeForm(formPayload);
-      let token = '';
-      try {
-        token = await getAccessTokenSilently();
-      } catch (e) {
-        console.warn('Could not get access token implicitly', e);
+      
+      let headers: Record<string, string> = {
+        'Content-Type': 'application/octet-stream',
+      };
+      
+      if (useEmailOnly && verifiedEmail) {
+        headers['Authorization'] = `EmailOnly ${verifiedEmail}`;
+      } else if (isAuthenticated) {
+        try {
+          const token = await getAccessTokenSilently();
+          headers['Authorization'] = `Bearer ${token}`;
+        } catch (e) {
+          console.warn('Could not get access token implicitly', e);
+        }
       }
       
       const response = await fetch('http://localhost:39210/forms/create', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/octet-stream',
-          'Authorization': `Bearer ${token}`,
-        },
+        headers,
         // @ts-ignore - TS complains about Uint8Array with SharedArrayBuffer
         body: encoded,
       });
@@ -116,6 +143,51 @@ export const FormBuilder: React.FC = () => {
     }
   };
 
+  const requestEmailVerification = async () => {
+    if (!verifiedEmail) {
+      setEmailVerifyError('Please enter your email first');
+      return;
+    }
+    try {
+      const encoded = encodeEmailVerificationRequest({ email: verifiedEmail });
+      const response = await fetch('http://localhost:39210/email/request_verification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        // @ts-ignore
+        body: encoded,
+      });
+      if (!response.ok) {
+        throw new Error('Failed to send verification email');
+      }
+      setShowEmailVerifyInput(true);
+    } catch (err) {
+      setEmailVerifyError((err as Error).message);
+    }
+  };
+
+  const verifyEmail = async () => {
+    if (!verifiedEmail || !emailVerificationCode) {
+      setEmailVerifyError('Please enter the verification code');
+      return;
+    }
+    try {
+      const encoded = encodeEmailVerificationVerify({ email: verifiedEmail, code: emailVerificationCode });
+      const response = await fetch('http://localhost:39210/email/verify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/octet-stream' },
+        // @ts-ignore
+        body: encoded,
+      });
+      if (!response.ok) {
+        throw new Error('Invalid verification code');
+      }
+      setShowEmailVerifyInput(false);
+      setEmailVerifyError(null);
+    } catch (err) {
+      setEmailVerifyError((err as Error).message);
+    }
+  };
+
   const copyLink = () => {
     if (createdFormId) {
       const link = `${window.location.origin}/forms/${createdFormId}`;
@@ -128,14 +200,71 @@ export const FormBuilder: React.FC = () => {
     return <div className="loading card" style={{ padding: '2rem', textAlign: 'center' }}>Loading authentication status...</div>;
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated && !useEmailOnly) {
     return (
       <div className="auth-required card animate-fade-in" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
-        <h2>Authentication Required</h2>
-        <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>You must be logged in to create a new form.</p>
+        <h2>Create a Form</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
+          Log in with Auth0 or use email-only mode below.
+        </p>
         <button onClick={() => loginWithRedirect()} className="primary-button large">
           <LogIn size={20} /> Log In with Auth0
         </button>
+        <div style={{ marginTop: '2rem', paddingTop: '2rem', borderTop: '1px solid var(--border)' }}>
+          <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>Or use email-only mode:</p>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+            <input 
+              type="checkbox" 
+              checked={useEmailOnly} 
+              onChange={(e) => setUseEmailOnly(e.target.checked)} 
+            />
+            Use email-only authentication
+          </label>
+        </div>
+      </div>
+    );
+  }
+
+  if (useEmailOnly && !verifiedEmail) {
+    return (
+      <div className="auth-required card animate-fade-in" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+        <h2>Verify Your Email</h2>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '2rem' }}>
+          Enter your email to create forms without Auth0.
+        </p>
+        <div className="form-group" style={{ maxWidth: '400px', margin: '0 auto 1.5rem' }}>
+          <input 
+            type="email" 
+            value={verifiedEmail || ''} 
+            onChange={(e) => setVerifiedEmail(e.target.value)}
+            placeholder="your@email.com"
+          />
+        </div>
+        <button onClick={requestEmailVerification} className="primary-button large">
+          <Mail size={20} /> Send Verification Code
+        </button>
+        {showEmailVerifyInput && (
+          <div style={{ marginTop: '2rem' }}>
+            <p style={{ color: 'var(--text-muted)', marginBottom: '1rem' }}>Enter verification code:</p>
+            <div className="form-group" style={{ maxWidth: '300px', margin: '0 auto 1rem' }}>
+              <input 
+                type="text" 
+                value={emailVerificationCode} 
+                onChange={(e) => setEmailVerificationCode(e.target.value)}
+                placeholder="123456"
+              />
+            </div>
+            <button onClick={verifyEmail} className="secondary-button">
+              Verify
+            </button>
+          </div>
+        )}
+        {emailVerifyError && <div className="error-message" style={{ marginTop: '1rem' }}>{emailVerifyError}</div>}
+        <div style={{ marginTop: '2rem' }}>
+          <button onClick={() => { setUseEmailOnly(false); setVerifiedEmail(null); }} className="text-button">
+            Back to Auth0 login
+          </button>
+        </div>
       </div>
     );
   }
@@ -180,6 +309,43 @@ export const FormBuilder: React.FC = () => {
             onChange={(e) => setDescription(e.target.value)}
             placeholder="What is this form about?"
           />
+        </div>
+
+        <div className="card" style={{ marginTop: '1rem', border: '1px solid var(--primary)', background: 'var(--primary-light)' }}>
+          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 0 }}>
+            <Mail size={18} /> Email-Only Mode
+          </h3>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1rem', cursor: 'pointer' }}>
+            <input 
+              type="checkbox" 
+              checked={useEmailOnly} 
+              onChange={(e) => setUseEmailOnly(e.target.checked)} 
+            />
+            Use email-only authentication (no Auth0 required)
+          </label>
+          
+          {useEmailOnly && (
+            <>
+              <div className="form-group">
+                <label>Allowed Emails (comma-separated)</label>
+                <input 
+                  type="text" 
+                  value={mentionedEmails} 
+                  onChange={(e) => setMentionedEmails(e.target.value)}
+                  placeholder="alice@example.com, bob@example.com"
+                />
+                <p className="help-text">Only these emails will be able to submit this form.</p>
+              </div>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: '1rem', cursor: 'pointer' }}>
+                <input 
+                  type="checkbox" 
+                  checked={requiresOtpVerification} 
+                  onChange={(e) => setRequiresOtpVerification(e.target.checked)} 
+                />
+                Require OTP verification before submission
+              </label>
+            </>
+          )}
         </div>
       </div>
 

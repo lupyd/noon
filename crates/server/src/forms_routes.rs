@@ -9,7 +9,7 @@ use std::sync::Arc;
 
 use crate::auth::TokenVerificationError;
 use crate::forms_db;
-use crate::pb::forms::{Form, FormSubmission};
+use crate::pb::forms::{Form, FormSubmission, OtpRequest, OtpVerify, EmailVerificationRequest, EmailVerificationVerify};
 use crate::response_builder;
 use crate::shared_data::SharedData;
 use crate::{
@@ -29,7 +29,14 @@ pub async fn handle_request(
         return create_form_route(req, sd).await;
     }
 
-    // Parse /forms/:id endpoints
+    if method == Method::POST && path == "/email/request_verification" {
+        return request_email_verification_route(req, sd).await;
+    }
+
+    if method == Method::POST && path == "/email/verify" {
+        return verify_email_route(req, sd).await;
+    }
+
     if let Some(rest) = path.strip_prefix("/forms/") {
         let parts: Vec<&str> = rest.split('/').collect();
         if parts.is_empty() {
@@ -53,6 +60,8 @@ pub async fn handle_request(
                 (Method::POST, "submit_blind") => {
                     return submit_blind_route(req, sd, form_id).await;
                 }
+                (Method::POST, "request_otp") => return request_otp_route(req, sd, form_id).await,
+                (Method::POST, "verify_otp") => return verify_otp_route(req, sd, form_id).await,
                 _ => return Ok(not_found_response()),
             }
         }
@@ -65,13 +74,7 @@ async fn create_form_route(
     req: Request<Incoming>,
     sd: Arc<SharedData>,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
-    let auth_token = match sd.auth.verify_from_headers(req.headers()).await {
-        Ok(t) => t,
-        Err(err) => {
-            return Ok(build_response(StatusCode::UNAUTHORIZED, format!("{}", err)));
-        }
-    };
-
+    let headers = req.headers().clone();
     let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
         // 5MB max
         Ok(b) => b,
@@ -84,7 +87,42 @@ async fn create_form_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
-    match forms_db::create_form(&sd.db, form, auth_token.username.to_string()).await {
+    let owner: String;
+    if form.use_email_only {
+        let auth_header = headers.get("Authorization");
+        if let Some(auth) = auth_header {
+            let auth_str = auth.to_str().unwrap_or("");
+            if let Some(token) = auth_str.strip_prefix("EmailOnly ") {
+                if forms_db::is_email_verified(&sd.db, token).await.unwrap_or(false) {
+                    owner = token.to_string();
+                } else {
+                    return Ok(build_response(StatusCode::UNAUTHORIZED, "Email not verified"));
+                }
+            } else if let Some(_) = auth_str.strip_prefix("Bearer ") {
+                let auth_token = match sd.auth.verify_from_headers(&headers).await {
+                    Ok(t) => t,
+                    Err(err) => {
+                        return Ok(build_response(StatusCode::UNAUTHORIZED, format!("{}", err)));
+                    }
+                };
+                owner = auth_token.username.to_string();
+            } else {
+                return Ok(build_response(StatusCode::UNAUTHORIZED, "Invalid auth header"));
+            }
+        } else {
+            return Ok(build_response(StatusCode::UNAUTHORIZED, "Authorization required"));
+        }
+    } else {
+        let auth_token = match sd.auth.verify_from_headers(&headers).await {
+            Ok(t) => t,
+            Err(err) => {
+                return Ok(build_response(StatusCode::UNAUTHORIZED, format!("{}", err)));
+            }
+        };
+        owner = auth_token.username.to_string();
+    }
+
+    match forms_db::create_form(&sd.db, form, owner).await {
         Ok(id) => Ok(build_response(
             StatusCode::OK,
             format!("{{\"id\": {}}}", id),
@@ -149,13 +187,54 @@ async fn submit_form_route(
         ));
     }
 
-    let auth_token = match sd.auth.verify_from_headers(req.headers()).await {
-        Ok(t) => t,
-        Err(err) => return Ok(build_response(StatusCode::UNAUTHORIZED, format!("{}", err))),
-    };
+    let username: String;
+    let email_to_verify: Option<String>;
+    let headers = req.headers().clone();
+    
+    if parsed_form.use_email_only {
+        let auth_header = headers.get("Authorization");
+        if let Some(auth) = auth_header {
+            let auth_str = auth.to_str().unwrap_or("");
+            if let Some(token) = auth_str.strip_prefix("EmailOnly ") {
+                if forms_db::is_email_verified(&sd.db, token).await.unwrap_or(false) {
+                    username = token.to_string();
+                    email_to_verify = Some(token.to_string());
+                } else {
+                    return Ok(build_response(StatusCode::UNAUTHORIZED, "Email not verified"));
+                }
+            } else if let Some(_) = auth_str.strip_prefix("Bearer ") {
+                let auth_token = match sd.auth.verify_from_headers(&headers).await {
+                    Ok(t) => t,
+                    Err(err) => return Ok(build_response(StatusCode::UNAUTHORIZED, format!("{}", err))),
+                };
+                username = auth_token.username.to_string();
+                email_to_verify = None;
+            } else {
+                return Ok(build_response(StatusCode::UNAUTHORIZED, "Invalid auth header"));
+            }
+        } else {
+            return Ok(build_response(StatusCode::UNAUTHORIZED, "Authorization required"));
+        }
+        
+        if parsed_form.requires_otp_verification {
+            if let Some(email) = &email_to_verify {
+                if !parsed_form.mentioned_emails.iter().any(|e| e.as_ref() == email.as_str()) {
+                    return Ok(build_response(
+                        StatusCode::FORBIDDEN,
+                        "Email not authorized for this form",
+                    ));
+                }
+            }
+        }
+    } else {
+        let auth_token = match sd.auth.verify_from_headers(&headers).await {
+            Ok(t) => t,
+            Err(err) => return Ok(build_response(StatusCode::UNAUTHORIZED, format!("{}", err))),
+        };
+        username = auth_token.username.to_string();
+        email_to_verify = None;
+    }
 
-    // Need to verify participation if form restricts it
-    // Wait, let's just submit the form for now. Real implementation needs to verify if user is allowed.
     let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
         // 5MB
         Ok(b) => b,
@@ -169,7 +248,7 @@ async fn submit_form_route(
     };
 
     submission.form_id = form_id;
-    submission.username = auth_token.username.to_string().into();
+    submission.username = username.into();
 
     match forms_db::submit_form(&sd.db, submission).await {
         Ok(_) => Ok(ok_response("OK")),
@@ -320,6 +399,165 @@ async fn submit_blind_route(
         Ok(_) => Ok(ok_response("OK")),
         Err(e) => {
             log::error!("submit_form error: {:?}", e);
+            Ok(internal_error_response())
+        }
+    }
+}
+
+async fn request_otp_route(
+    req: Request<Incoming>,
+    sd: Arc<SharedData>,
+    form_id: u64,
+) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
+    let form_bytes = match forms_db::get_form_bytes(&sd.db, form_id).await {
+        Ok(b) => b,
+        Err(_) => return Ok(not_found_response()),
+    };
+    let mut reader = quick_protobuf::BytesReader::from_bytes(&form_bytes);
+    let parsed_form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
+
+    if !parsed_form.requires_otp_verification {
+        return Ok(build_response(
+            StatusCode::BAD_REQUEST,
+            "This form does not require OTP verification",
+        ));
+    }
+
+    let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
+        Ok(b) => b,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
+    let otp_request = match OtpRequest::from_reader(&mut reader, &body_bytes) {
+        Ok(o) => o,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let email = otp_request.email.to_string();
+
+    let email_ref: &str = &email;
+    if !parsed_form.mentioned_emails.iter().any(|e| e.as_ref() == email_ref) {
+        return Ok(build_response(
+            StatusCode::FORBIDDEN,
+            "Email not authorized for this form",
+        ));
+    }
+
+    match forms_db::create_otp(&sd.db, &email, form_id).await {
+        Ok(code) => {
+            log::info!("Created OTP code for {}: {}", email, code);
+            if let Some(emailer) = &sd.emailer {
+                let form_name = parsed_form.name.to_string();
+                if let Err(e) = emailer.send_otp_email(&email, &form_name, &code) {
+                    log::error!("Failed to send OTP email: {}", e);
+                    return Ok(internal_error_response());
+                }
+            } else if sd.skip_email_sending {
+                log::info!("SKIP_EMAIL_SENDING is true, OTP code for {}: {}", email, code);
+            } else {
+                log::warn!("Emailer not configured, OTP code not sent: {}", code);
+            }
+            Ok(ok_response("OK"))
+        }
+        Err(e) => {
+            log::error!("create_otp error: {:?}", e);
+            Ok(internal_error_response())
+        }
+    }
+}
+
+async fn verify_otp_route(
+    req: Request<Incoming>,
+    sd: Arc<SharedData>,
+    form_id: u64,
+) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
+    let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
+        Ok(b) => b,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
+    let otp_verify = match OtpVerify::from_reader(&mut reader, &body_bytes) {
+        Ok(o) => o,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let email = otp_verify.email.to_string();
+    let code = otp_verify.code.to_string();
+
+    match forms_db::verify_otp(&sd.db, &email, &code, form_id).await {
+        Ok(true) => Ok(ok_response("OK")),
+        Ok(false) => Ok(build_response(StatusCode::UNAUTHORIZED, "Invalid or expired OTP")),
+        Err(e) => {
+            log::error!("verify_otp error: {:?}", e);
+            Ok(internal_error_response())
+        }
+    }
+}
+
+async fn request_email_verification_route(
+    req: Request<Incoming>,
+    sd: Arc<SharedData>,
+) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
+    let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
+        Ok(b) => b,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
+    let verify_req = match EmailVerificationRequest::from_reader(&mut reader, &body_bytes) {
+        Ok(o) => o,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let email = verify_req.email.to_string();
+
+    match forms_db::create_email_verification(&sd.db, &email).await {
+        Ok(code) => {
+            log::info!("Created email verification code for {}: {}", email, code);
+            if let Some(emailer) = &sd.emailer {
+                if let Err(e) = emailer.send_otp_email(&email, "Noon Forms Email Verification", &code) {
+                    log::error!("Failed to send verification email: {}", e);
+                    return Ok(internal_error_response());
+                }
+            } else if sd.skip_email_sending {
+                log::info!("SKIP_EMAIL_SENDING is true, verification code for {}: {}", email, code);
+            } else {
+                log::warn!("Emailer not configured, verification code not sent: {}", code);
+            }
+            Ok(ok_response("OK"))
+        }
+        Err(e) => {
+            log::error!("create_email_verification error: {:?}", e);
+            Ok(internal_error_response())
+        }
+    }
+}
+
+async fn verify_email_route(
+    req: Request<Incoming>,
+    sd: Arc<SharedData>,
+) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
+    let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
+        Ok(b) => b,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
+    let verify = match EmailVerificationVerify::from_reader(&mut reader, &body_bytes) {
+        Ok(o) => o,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let email = verify.email.to_string();
+    let code = verify.code.to_string();
+
+    match forms_db::verify_email(&sd.db, &email, &code).await {
+        Ok(true) => Ok(ok_response("OK")),
+        Ok(false) => Ok(build_response(StatusCode::UNAUTHORIZED, "Invalid or expired verification code")),
+        Err(e) => {
+            log::error!("verify_email error: {:?}", e);
             Ok(internal_error_response())
         }
     }

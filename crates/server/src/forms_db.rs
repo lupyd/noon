@@ -5,8 +5,10 @@ use deadpool_postgres::tokio_postgres::types::Json;
 use noon_core::blind::BlindSigner;
 use quick_protobuf::{MessageRead, MessageWrite};
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use crate::pb::forms::{Form, FormSubmission};
+use crate::otp::generate_otp;
 
 pub async fn get_or_create_blind_signer(pool: &Pool) -> anyhow::Result<BlindSigner> {
     let client = pool.get().await?;
@@ -46,7 +48,9 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
 
     let db_form_json = serde_json::json!({ "protobuf_data": BASE64_STANDARD.encode(&out) });
 
-    let stmt = "INSERT INTO forms (name, description, owner, fields, is_anonymous) VALUES ($1, $2, $3, $4, $5) RETURNING id";
+    let mentioned_emails: Vec<&str> = form.mentioned_emails.iter().map(|s| s.as_ref()).collect();
+
+    let stmt = "INSERT INTO forms (name, description, owner, fields, is_anonymous, mentioned_emails, requires_otp_verification, use_email_only) VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id";
     let row = client
         .query_one(
             stmt,
@@ -56,6 +60,9 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
                 &owner,
                 &Json(&db_form_json),
                 &form.is_anonymous,
+                &mentioned_emails,
+                &form.requires_otp_verification,
+                &form.use_email_only,
             ],
         )
         .await?;
@@ -75,7 +82,7 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
 
 pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>> {
     let client = pool.get().await?;
-    let row = client.query_one("SELECT name, description, owner, fields, extract(epoch from created_at)::bigint as created_at, is_anonymous FROM forms WHERE id = $1", &[&(form_id as i64)]).await?;
+    let row = client.query_one("SELECT name, description, owner, fields, extract(epoch from created_at)::bigint as created_at, is_anonymous, mentioned_emails, requires_otp_verification, use_email_only FROM forms WHERE id = $1", &[&(form_id as i64)]).await?;
 
     let name: String = row.get(0);
     let description: String = row.get(1);
@@ -83,6 +90,9 @@ pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>
     let fields_json: Json<serde_json::Value> = row.get(3);
     let created_at: i64 = row.get(4);
     let is_anonymous: bool = row.get(5);
+    let mentioned_emails: Vec<String> = row.get(6);
+    let requires_otp_verification: bool = row.get(7);
+    let use_email_only: bool = row.get(8);
 
     let bytes = if let Some(data) = fields_json.0.get("protobuf_data") {
         if let Some(s) = data.as_str() {
@@ -104,6 +114,9 @@ pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>
     form.owner = owner.into();
     form.created_at = created_at as u64;
     form.is_anonymous = is_anonymous;
+    form.mentioned_emails = mentioned_emails.into_iter().map(|s| s.into()).collect();
+    form.requires_otp_verification = requires_otp_verification;
+    form.use_email_only = use_email_only;
 
     let rows = client
         .query(
@@ -170,4 +183,102 @@ pub async fn submit_form(pool: &Pool, submission: FormSubmission<'_>) -> anyhow:
         .await?;
 
     Ok(())
+}
+
+pub async fn create_otp(pool: &Pool, email: &str, form_id: u64) -> anyhow::Result<String> {
+    let client = pool.get().await?;
+
+    let code = generate_otp();
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as f64;
+    let expires_at = now + 300.0;
+    let form_id_i64 = form_id as i64;
+
+    client
+        .execute(
+            "INSERT INTO otp_codes (email, code, form_id, expires_at) VALUES ($1, $2, $3, to_timestamp($4))",
+            &[&email, &code, &form_id_i64, &expires_at],
+        )
+        .await?;
+
+    Ok(code)
+}
+
+pub async fn verify_otp(pool: &Pool, email: &str, code: &str, form_id: u64) -> anyhow::Result<bool> {
+    let client = pool.get().await?;
+
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs() as f64;
+
+    let form_id_i64 = form_id as i64;
+
+    let row = client
+        .query_opt(
+            "SELECT id FROM otp_codes WHERE email = $1 AND code = $2 AND form_id = $3 AND used = false AND expires_at > to_timestamp($4)",
+            &[&email, &code, &form_id_i64, &now],
+        )
+        .await?;
+
+    if let Some(row) = row {
+        let id: i64 = row.get(0);
+        client
+            .execute("UPDATE otp_codes SET used = true WHERE id = $1", &[&id])
+            .await?;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+pub async fn create_email_verification(pool: &Pool, email: &str) -> anyhow::Result<String> {
+    let client = pool.get().await?;
+
+    let code = generate_otp();
+    
+    client
+        .execute(
+            "INSERT INTO email_users (email, verification_code) VALUES ($1, $2) ON CONFLICT (email) DO UPDATE SET verification_code = $2, verified_at = NULL",
+            &[&email, &code],
+        )
+        .await?;
+
+    Ok(code)
+}
+
+pub async fn verify_email(pool: &Pool, email: &str, code: &str) -> anyhow::Result<bool> {
+    let client = pool.get().await?;
+
+    let row = client
+        .query_opt(
+            "SELECT id FROM email_users WHERE email = $1 AND verification_code = $2 AND verified_at IS NULL",
+            &[&email, &code],
+        )
+        .await?;
+
+    if let Some(row) = row {
+        let id: i64 = row.get(0);
+        client
+            .execute("UPDATE email_users SET verified_at = NOW() WHERE id = $1", &[&id])
+            .await?;
+        return Ok(true);
+    }
+
+    Ok(false)
+}
+
+pub async fn is_email_verified(pool: &Pool, email: &str) -> anyhow::Result<bool> {
+    let client = pool.get().await?;
+
+    let row = client
+        .query_opt(
+            "SELECT id FROM email_users WHERE email = $1 AND verified_at IS NOT NULL",
+            &[&email],
+        )
+        .await?;
+
+    Ok(row.is_some())
 }

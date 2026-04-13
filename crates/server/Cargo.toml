@@ -30,6 +30,10 @@ tokio-postgres-rustls = "0.13.0"
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 noon-core = { path = "../core" }
 rsa = { version = "0.9.10", features = ["sha2"] }
+lettre = "0.11"
+native-tls = "0.2"
+tokio-native-tls = "0.3"
+uuid = { version = "1", features = ["v4"] }
 
 [build-dependencies]
 pb-rs = "0.10.0"
