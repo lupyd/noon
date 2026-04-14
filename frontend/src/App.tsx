@@ -4,6 +4,7 @@ import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } f
 import { useAuth0 } from '@auth0/auth0-react';
 import { FormBuilder } from './components/FormBuilder';
 import { FormSubmission } from './components/FormSubmission';
+import { FormResults } from './components/FormResults';
 import { LogIn, LogOut } from 'lucide-react';
 import { SunLogo } from './components/logo';
 import './App.css';
@@ -118,6 +119,7 @@ function App() {
             <Route path="/index.html" element={<Navigate to="/" replace />} />
             <Route path="/create" element={<FormBuilder />} />
             <Route path="/forms/:id" element={<FormSubmission />} />
+            <Route path="/forms/:id/results" element={<FormResults />} />
           </Routes>
 
         </main>

@@ -1,4 +1,4 @@
-use noon_server::pb::forms::{FieldType, FieldValue, Form, FormSubmission, mod_FieldValue, mod_Form};
+use noon_server::pb::forms::{FieldType, FieldValue, Form, FormSubmission, mod_FieldValue, mod_Form, BlindSubmission};
 use noon_server::start_http_server;
 use quick_protobuf::{MessageWrite, Writer};
 use reqwest::{Client, StatusCode};
@@ -151,15 +151,14 @@ async fn submit_form_blind(
 
     // 4. Submit
     let submission_bytes = serialize_proto(submission);
-    let payload_json = serde_json::json!({
-        "payload": base64::prelude::BASE64_STANDARD.encode(&payload),
-        "signature": base64::prelude::BASE64_STANDARD.encode(&signature),
-        "submission": base64::prelude::BASE64_STANDARD.encode(&submission_bytes),
-    });
+    let mut blind_sub = BlindSubmission::default();
+    blind_sub.payload = Cow::Owned(payload);
+    blind_sub.signature = Cow::Owned(signature);
+    blind_sub.submission = Cow::Owned(submission_bytes);
 
     let submit_res = client
         .post(format!("{}/forms/{}/submit", base_url, form_id))
-        .json(&payload_json)
+        .body(serialize_proto(&blind_sub))
         .send()
         .await
         .expect("Failed to submit form");
@@ -263,7 +262,8 @@ async fn test_submit_to_anonymous_form_fails() {
     let mut submission = FormSubmission::default();
     submission.form_id = form_id;
 
-    // Direct submit fails with 400 because it expects JSON
+    // Direct submit fails with 400 because it expects BlindSubmission, not FormSubmission
+    // (Actually it might fail because of signature verification if fields are empty)
     let submit_res = client
         .post(format!("{}/forms/{}/submit", base_url, form_id))
         .header("Authorization", "Bearer submitter")

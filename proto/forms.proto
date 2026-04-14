@@ -93,3 +93,13 @@ message EmailVerificationVerify {
     string email = 1;
     string code = 2;
 }
+
+message BlindSubmission {
+    bytes payload = 1;
+    bytes signature = 2;
+    bytes submission = 3; // Encoded FormSubmission
+}
+
+message FormResults {
+    repeated FormSubmission submissions = 1;
+}

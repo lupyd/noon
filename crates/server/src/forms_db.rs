@@ -168,6 +168,19 @@ pub async fn submit_form(pool: &Pool, submission: FormSubmission<'_>) -> anyhow:
     Ok(())
 }
 
+pub async fn get_form_submissions(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<Vec<u8>>> {
+    let client = pool.get().await?;
+    let rows = client
+        .query(
+            "SELECT data FROM form_submissions WHERE form_id = $1 ORDER BY id DESC",
+            &[&(form_id as i64)],
+        )
+        .await?;
+    
+    Ok(rows.into_iter().map(|r| r.get(0)).collect())
+}
+
+
 pub async fn create_otp(pool: &Pool, email: &str, form_id: Option<u64>) -> anyhow::Result<String> {
     let client = pool.get().await?;
 

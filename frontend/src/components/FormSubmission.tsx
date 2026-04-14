@@ -1,13 +1,14 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { 
-  decodeForm, 
-  encodeFormSubmission, 
-  encodeOtpRequest, 
-  encodeOtpVerify, 
-  type FormType, 
-  FieldType, 
-  type FieldValue 
+import {
+  decodeForm,
+  encodeFormSubmission,
+  encodeOtpRequest,
+  encodeOtpVerify,
+  encodeBlindSubmission,
+  type FormType,
+  FieldType,
+  type FieldValue
 } from '../proto';
 import { Send, CheckCircle, AlertCircle, Lock, Mail, Shield, ChevronRight, Hash, ArrowLeft } from 'lucide-react';
 import { useAuth0 } from '@auth0/auth0-react';
@@ -16,20 +17,20 @@ import * as mycrypto from '../crypto';
 export const FormSubmission: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { getAccessTokenSilently, isAuthenticated, loginWithRedirect } = useAuth0();
-  
+
   const [form, setForm] = useState<FormType | null>(null);
   const [values, setValues] = useState<Record<string, FieldValue>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  
+
   const [userEmail, setUserEmail] = useState('');
   const [otpCode, setOtpCode] = useState('');
   const [showOtpInput, setShowOtpInput] = useState(false);
   const [needsAuth, setNeedsAuth] = useState(false);
   const [isVerifying, setIsVerifying] = useState(false);
-  
+
   // Per-form tokens stored in localStorage
   const [token, setToken] = useState<string | null>(localStorage.getItem(`noon_token_${id}`));
 
@@ -38,7 +39,7 @@ export const FormSubmission: React.FC = () => {
     setError(null);
     try {
       const headers: Record<string, string> = {};
-      
+
       if (token) {
         headers['Authorization'] = `EmailOnly ${token}`;
       } else if (isAuthenticated) {
@@ -68,7 +69,7 @@ export const FormSubmission: React.FC = () => {
       const decoded = decodeForm(new Uint8Array(buffer));
       setForm(decoded);
       setNeedsAuth(false);
-      
+
       // Initialize values
       const initialValues: Record<string, FieldValue> = {};
       decoded.fields.forEach((field) => {
@@ -134,7 +135,7 @@ export const FormSubmission: React.FC = () => {
         body: encoded,
       });
       if (!response.ok) throw new Error('Invalid or expired OTP');
-      
+
       const newToken = await response.text();
       setToken(newToken);
       localStorage.setItem(`noon_token_${id}`, newToken);
@@ -193,7 +194,7 @@ export const FormSubmission: React.FC = () => {
       });
 
       if (!signRes.ok) throw new Error(await signRes.text() || "Failed to get blind signature.");
-      
+
       const s_blinded_bytes = new Uint8Array(await signRes.arrayBuffer());
       const s_blinded = mycrypto.bytesToBigIntLE(s_blinded_bytes);
 
@@ -201,14 +202,16 @@ export const FormSubmission: React.FC = () => {
       const s = (s_blinded * r_inv) % publicN;
       const signatureBytes = mycrypto.bigIntToBytesLE(s);
 
+      const blindSubmission = {
+        payload: payloadBytes,
+        signature: signatureBytes,
+        submission: encoded,
+      };
+
       const submitRes = await fetch(`http://localhost:39210/forms/${id}/submit`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          payload: mycrypto.bytesToBase64(payloadBytes),
-          signature: mycrypto.bytesToBase64(signatureBytes),
-          submission: mycrypto.bytesToBase64(encoded),
-        })
+        headers: { 'Content-Type': 'application/octet-stream' },
+        body: new Uint8Array(encodeBlindSubmission(blindSubmission))
       });
 
       if (!submitRes.ok) throw new Error(await submitRes.text() || "Failed to submit form");
@@ -260,9 +263,9 @@ export const FormSubmission: React.FC = () => {
               <label>Institutional Email</label>
               <div style={{ position: 'relative' }}>
                 <Mail size={18} style={{ position: 'absolute', left: '1.25rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input 
-                  type="email" 
-                  value={userEmail} 
+                <input
+                  type="email"
+                  value={userEmail}
                   onChange={(e) => setUserEmail(e.target.value)}
                   placeholder="name@company.com"
                   style={{ paddingLeft: '3.5rem' }}
@@ -270,9 +273,9 @@ export const FormSubmission: React.FC = () => {
                 />
               </div>
             </div>
-            <button 
+            <button
               type="submit"
-              className="primary-button large" 
+              className="primary-button large"
               style={{ width: '100%' }}
               disabled={!userEmail || isVerifying}
             >
@@ -283,9 +286,9 @@ export const FormSubmission: React.FC = () => {
               <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>OR</span>
               <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
             </div>
-            <button 
+            <button
               type="button"
-              onClick={() => loginWithRedirect({ appState: { returnTo: window.location.pathname } })} 
+              onClick={() => loginWithRedirect({ appState: { returnTo: window.location.pathname } })}
               className="secondary-button"
               style={{ width: '100%', padding: '1.25rem' }}
             >
@@ -301,9 +304,9 @@ export const FormSubmission: React.FC = () => {
               <label>Authentication Code</label>
               <div style={{ position: 'relative' }}>
                 <Hash size={18} style={{ position: 'absolute', left: '1.25rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-                <input 
-                  type="text" 
-                  value={otpCode} 
+                <input
+                  type="text"
+                  value={otpCode}
                   onChange={(e) => setOtpCode(e.target.value)}
                   placeholder="000000"
                   maxLength={6}
@@ -313,9 +316,9 @@ export const FormSubmission: React.FC = () => {
               </div>
               <p className="help-text" style={{ marginTop: '1rem' }}>Enter the 6-digit code sent to {userEmail}</p>
             </div>
-            <button 
+            <button
               type="submit"
-              className="primary-button large" 
+              className="primary-button large"
               style={{ width: '100%' }}
               disabled={otpCode.length < 6 || isVerifying}
             >
@@ -324,7 +327,7 @@ export const FormSubmission: React.FC = () => {
           </form>
         )}
       </div>
-      
+
       {error && <div className="error-message" style={{ marginTop: '2.5rem', fontSize: '0.875rem' }}>{error}</div>}
     </div>
   );
@@ -347,10 +350,10 @@ export const FormSubmission: React.FC = () => {
               <span>{field.label} {field.required && <span style={{ color: 'var(--error)' }}>*</span>}</span>
               <span style={{ opacity: 0.3, fontWeight: 400 }}>0{index + 1}</span>
             </label>
-            
+
             <div className="input-wrapper">
               {field.type === FieldType.TEXTAREA ? ( // TEXTAREA
-                <textarea 
+                <textarea
                   placeholder={field.placeholder || "Your detailed response..."}
                   required={field.required}
                   onChange={(e) => handleInputChange(field.name, e.target.value, 'stringValue')}
@@ -358,7 +361,7 @@ export const FormSubmission: React.FC = () => {
                   style={{ resize: 'vertical' }}
                 />
               ) : field.type === FieldType.NUMBER ? ( // NUMBER
-                <input 
+                <input
                   type="number"
                   placeholder={field.placeholder || "0.00"}
                   required={field.required}
@@ -366,7 +369,7 @@ export const FormSubmission: React.FC = () => {
                 />
               ) : field.type === FieldType.CHECKBOX ? ( // CHECKBOX
                 <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.5rem 0' }}>
-                   <input 
+                  <input
                     type="checkbox"
                     id={`check-${field.name}`}
                     required={field.required}
@@ -378,7 +381,7 @@ export const FormSubmission: React.FC = () => {
                   </label>
                 </div>
               ) : (
-                <input 
+                <input
                   type={field.type === FieldType.EMAIL ? 'email' : field.type === FieldType.URL ? 'url' : 'text'}
                   placeholder={field.placeholder || "Type your answer here..."}
                   required={field.required}
@@ -391,9 +394,9 @@ export const FormSubmission: React.FC = () => {
         ))}
 
         <div style={{ marginTop: '4rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-          <button 
-            type="submit" 
-            className="primary-button large" 
+          <button
+            type="submit"
+            className="primary-button large"
             disabled={isSubmitting}
             style={{ minWidth: '300px' }}
           >
@@ -404,7 +407,7 @@ export const FormSubmission: React.FC = () => {
           </p>
         </div>
       </form>
-      
+
       {error && (
         <div className="error-message card animate-fade-in" style={{ maxWidth: '800px', margin: '2rem auto', borderColor: 'var(--error)', background: 'rgba(239, 68, 68, 0.05)' }}>
           <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>

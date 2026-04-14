@@ -607,3 +607,75 @@ impl<'a> MessageWrite for EmailVerificationVerify<'a> {
     }
 }
 
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct BlindSubmission<'a> {
+    pub payload: Cow<'a, [u8]>,
+    pub signature: Cow<'a, [u8]>,
+    pub submission: Cow<'a, [u8]>,
+}
+
+impl<'a> MessageRead<'a> for BlindSubmission<'a> {
+    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
+        let mut msg = Self::default();
+        while !r.is_eof() {
+            match r.next_tag(bytes) {
+                Ok(10) => msg.payload = r.read_bytes(bytes).map(Cow::Borrowed)?,
+                Ok(18) => msg.signature = r.read_bytes(bytes).map(Cow::Borrowed)?,
+                Ok(26) => msg.submission = r.read_bytes(bytes).map(Cow::Borrowed)?,
+                Ok(t) => { r.read_unknown(bytes, t)?; }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(msg)
+    }
+}
+
+impl<'a> MessageWrite for BlindSubmission<'a> {
+    fn get_size(&self) -> usize {
+        0
+        + if self.payload == Cow::Borrowed(b"") { 0 } else { 1 + sizeof_len((&self.payload).len()) }
+        + if self.signature == Cow::Borrowed(b"") { 0 } else { 1 + sizeof_len((&self.signature).len()) }
+        + if self.submission == Cow::Borrowed(b"") { 0 } else { 1 + sizeof_len((&self.submission).len()) }
+    }
+
+    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
+        if self.payload != Cow::Borrowed(b"") { w.write_with_tag(10, |w| w.write_bytes(&**&self.payload))?; }
+        if self.signature != Cow::Borrowed(b"") { w.write_with_tag(18, |w| w.write_bytes(&**&self.signature))?; }
+        if self.submission != Cow::Borrowed(b"") { w.write_with_tag(26, |w| w.write_bytes(&**&self.submission))?; }
+        Ok(())
+    }
+}
+
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct FormResults<'a> {
+    pub submissions: Vec<FormSubmission<'a>>,
+}
+
+impl<'a> MessageRead<'a> for FormResults<'a> {
+    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
+        let mut msg = Self::default();
+        while !r.is_eof() {
+            match r.next_tag(bytes) {
+                Ok(10) => msg.submissions.push(r.read_message::<FormSubmission>(bytes)?),
+                Ok(t) => { r.read_unknown(bytes, t)?; }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(msg)
+    }
+}
+
+impl<'a> MessageWrite for FormResults<'a> {
+    fn get_size(&self) -> usize {
+        0
+        + self.submissions.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
+    }
+
+    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
+        for s in &self.submissions { w.write_with_tag(10, |w| w.write_message(s))?; }
+        Ok(())
+    }
+}
+

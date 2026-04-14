@@ -1,10 +1,11 @@
 use noon_server::pb::forms::{
-    EmailVerificationRequest, EmailVerificationVerify, Form, FormSubmission,
+    EmailVerificationRequest, EmailVerificationVerify, Form, FormSubmission, BlindSubmission
 };
 use noon_server::start_http_server;
 use quick_protobuf::{MessageWrite, Writer};
 use reqwest::{Client, StatusCode};
 use std::time::Duration;
+use std::borrow::Cow;
 use noon_core::blind::{create_blinded_message, unblind_signature};
 use base64::Engine;
 
@@ -105,15 +106,14 @@ async fn submit_form_blind(
 
     // 4. Submit
     let submission_bytes = serialize_proto(submission);
-    let payload_json = serde_json::json!({
-        "payload": base64::prelude::BASE64_STANDARD.encode(&payload),
-        "signature": base64::prelude::BASE64_STANDARD.encode(&signature),
-        "submission": base64::prelude::BASE64_STANDARD.encode(&submission_bytes),
-    });
+    let mut blind_sub = BlindSubmission::default();
+    blind_sub.payload = Cow::Owned(payload);
+    blind_sub.signature = Cow::Owned(signature);
+    blind_sub.submission = Cow::Owned(submission_bytes);
 
     let submit_res = client
         .post(format!("{}/forms/{}/submit", base_url, form_id))
-        .json(&payload_json)
+        .body(serialize_proto(&blind_sub))
         .send()
         .await
         .expect("Failed to submit form");

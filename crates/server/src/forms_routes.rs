@@ -3,12 +3,12 @@ use bytes::Bytes;
 use http_body_util::Full;
 use hyper::{Method, Request, Response, StatusCode, body::Incoming, header};
 use quick_protobuf::MessageRead;
-use serde_json::Value;
 use std::sync::Arc;
 
 use crate::forms_db;
 use crate::pb::forms::{
-    EmailVerificationRequest, EmailVerificationVerify, Form, FormSubmission, OtpRequest, OtpVerify,
+    BlindSubmission, EmailVerificationRequest, EmailVerificationVerify, Form,
+    FormSubmission, OtpRequest, OtpVerify,
 };
 use crate::shared_data::SharedData;
 use crate::{
@@ -58,6 +58,7 @@ pub async fn handle_request(
                 (Method::POST, "blind_sign") => return blind_sign_route(req, sd, form_id).await,
                 (Method::POST, "request_otp") => return request_otp_route(req, sd, form_id).await,
                 (Method::POST, "verify_otp") => return verify_otp_route(req, sd, form_id).await,
+                (Method::GET, "results") => return get_results_route(req, sd, form_id).await,
                 _ => return Ok(not_found_response()),
             }
         }
@@ -255,13 +256,6 @@ async fn submit_blind_route(
     sd: Arc<SharedData>,
     form_id: u64,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
-    let form_bytes = match forms_db::get_form_bytes(&sd.db, form_id).await {
-        Ok(b) => b,
-        Err(_) => return Ok(not_found_response()),
-    };
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&form_bytes);
-    let _parsed_form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
-
     // Unauthenticated!
     let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
         // 5MB
@@ -269,37 +263,22 @@ async fn submit_blind_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
-    // Read JSON payload having `payload`, `signature` and `submission`
-    let val: Value = match serde_json::from_slice(&body_bytes) {
-        Ok(v) => v,
-        Err(_) => return Ok(bad_request_response()),
+    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
+    let blind_sub = match BlindSubmission::from_reader(&mut reader, &body_bytes) {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("BlindSubmission parse error: {:?}", e);
+            return Ok(bad_request_response());
+        }
     };
 
-    let payload = val
-        .get("payload")
-        .and_then(|v| v.as_str())
-        .map(|s| {
-            base64::prelude::BASE64_STANDARD
-                .decode(s)
-                .unwrap_or_default()
-        })
-        .unwrap_or_default();
-    let signature = val
-        .get("signature")
-        .and_then(|v| v.as_str())
-        .map(|s| {
-            base64::prelude::BASE64_STANDARD
-                .decode(s)
-                .unwrap_or_default()
-        })
-        .unwrap_or_default();
-    let submission_b64 = val
-        .get("submission")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default();
-    let submission_bytes = base64::prelude::BASE64_STANDARD
-        .decode(submission_b64)
-        .unwrap_or_default();
+    let payload = blind_sub.payload.to_vec();
+    let signature = blind_sub.signature.to_vec();
+    let submission_bytes = blind_sub.submission.to_vec();
+
+    if payload.is_empty() || signature.is_empty() || submission_bytes.is_empty() {
+        return Ok(bad_request_response());
+    }
 
     let signer = match forms_db::get_or_create_blind_signer(&sd.db).await {
         Ok(s) => s,
@@ -331,6 +310,53 @@ async fn submit_blind_route(
         }
     }
 }
+
+async fn get_results_route(
+    req: Request<Incoming>,
+    sd: Arc<SharedData>,
+    form_id: u64,
+) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
+    let participant = match get_authorized_participant(req.headers(), &sd, None).await {
+        Some(p) => p,
+        None => return Ok(unauthorized_response()),
+    };
+
+    // Verify ownership
+    let form_bytes = match forms_db::get_form_bytes(&sd.db, form_id).await {
+        Ok(b) => b,
+        Err(_) => return Ok(not_found_response()),
+    };
+    let mut reader = quick_protobuf::BytesReader::from_bytes(&form_bytes);
+    let form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
+
+    if form.owner.as_ref() != participant {
+        return Ok(build_response(
+            StatusCode::FORBIDDEN,
+            "Only form owner can see results",
+        ));
+    }
+
+    match forms_db::get_form_submissions(&sd.db, form_id).await {
+        Ok(subs_bytes) => {
+            let mut out = Vec::new();
+            let mut writer = quick_protobuf::Writer::new(&mut out);
+            
+            for sub_bytes in subs_bytes {
+                // FormResults has field 1 as repeated FormSubmission
+                // Protocol Buffer wire format for field 1 (message) is tag 10
+                writer.write_tag(10).expect("Failed to write tag");
+                writer.write_bytes(&sub_bytes).expect("Failed to write bytes");
+            }
+
+            Ok(ok_response(out))
+        }
+        Err(e) => {
+            log::error!("get_form_submissions error: {:?}", e);
+            Ok(internal_error_response())
+        }
+    }
+}
+
 
 async fn request_otp_route(
     req: Request<Incoming>,

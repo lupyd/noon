@@ -179,6 +179,17 @@ export interface EmailVerificationVerify {
   code: string;
 }
 
+export interface BlindSubmission {
+  payload: Uint8Array;
+  signature: Uint8Array;
+  /** Encoded FormSubmission */
+  submission: Uint8Array;
+}
+
+export interface FormResults {
+  submissions: FormSubmission[];
+}
+
 function createBaseOption(): Option {
   return { label: "", value: "", bit: 0 };
 }
@@ -1554,6 +1565,185 @@ export const EmailVerificationVerify: MessageFns<EmailVerificationVerify> = {
     return message;
   },
 };
+
+function createBaseBlindSubmission(): BlindSubmission {
+  return { payload: new Uint8Array(0), signature: new Uint8Array(0), submission: new Uint8Array(0) };
+}
+
+export const BlindSubmission: MessageFns<BlindSubmission> = {
+  encode(message: BlindSubmission, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.payload.length !== 0) {
+      writer.uint32(10).bytes(message.payload);
+    }
+    if (message.signature.length !== 0) {
+      writer.uint32(18).bytes(message.signature);
+    }
+    if (message.submission.length !== 0) {
+      writer.uint32(26).bytes(message.submission);
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): BlindSubmission {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseBlindSubmission();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.payload = reader.bytes();
+          continue;
+        }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.signature = reader.bytes();
+          continue;
+        }
+        case 3: {
+          if (tag !== 26) {
+            break;
+          }
+
+          message.submission = reader.bytes();
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): BlindSubmission {
+    return {
+      payload: isSet(object.payload) ? bytesFromBase64(object.payload) : new Uint8Array(0),
+      signature: isSet(object.signature) ? bytesFromBase64(object.signature) : new Uint8Array(0),
+      submission: isSet(object.submission) ? bytesFromBase64(object.submission) : new Uint8Array(0),
+    };
+  },
+
+  toJSON(message: BlindSubmission): unknown {
+    const obj: any = {};
+    if (message.payload.length !== 0) {
+      obj.payload = base64FromBytes(message.payload);
+    }
+    if (message.signature.length !== 0) {
+      obj.signature = base64FromBytes(message.signature);
+    }
+    if (message.submission.length !== 0) {
+      obj.submission = base64FromBytes(message.submission);
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<BlindSubmission>, I>>(base?: I): BlindSubmission {
+    return BlindSubmission.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<BlindSubmission>, I>>(object: I): BlindSubmission {
+    const message = createBaseBlindSubmission();
+    message.payload = object.payload ?? new Uint8Array(0);
+    message.signature = object.signature ?? new Uint8Array(0);
+    message.submission = object.submission ?? new Uint8Array(0);
+    return message;
+  },
+};
+
+function createBaseFormResults(): FormResults {
+  return { submissions: [] };
+}
+
+export const FormResults: MessageFns<FormResults> = {
+  encode(message: FormResults, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.submissions) {
+      FormSubmission.encode(v!, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): FormResults {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseFormResults();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.submissions.push(FormSubmission.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): FormResults {
+    return {
+      submissions: globalThis.Array.isArray(object?.submissions)
+        ? object.submissions.map((e: any) => FormSubmission.fromJSON(e))
+        : [],
+    };
+  },
+
+  toJSON(message: FormResults): unknown {
+    const obj: any = {};
+    if (message.submissions?.length) {
+      obj.submissions = message.submissions.map((e) => FormSubmission.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<FormResults>, I>>(base?: I): FormResults {
+    return FormResults.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<FormResults>, I>>(object: I): FormResults {
+    const message = createBaseFormResults();
+    message.submissions = object.submissions?.map((e) => FormSubmission.fromPartial(e)) || [];
+    return message;
+  },
+};
+
+function bytesFromBase64(b64: string): Uint8Array {
+  if ((globalThis as any).Buffer) {
+    return Uint8Array.from((globalThis as any).Buffer.from(b64, "base64"));
+  } else {
+    const bin = globalThis.atob(b64);
+    const arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; ++i) {
+      arr[i] = bin.charCodeAt(i);
+    }
+    return arr;
+  }
+}
+
+function base64FromBytes(arr: Uint8Array): string {
+  if ((globalThis as any).Buffer) {
+    return (globalThis as any).Buffer.from(arr).toString("base64");
+  } else {
+    const bin: string[] = [];
+    arr.forEach((byte) => {
+      bin.push(globalThis.String.fromCharCode(byte));
+    });
+    return globalThis.btoa(bin.join(""));
+  }
+}
 
 type Builtin = Date | Function | Uint8Array | string | number | boolean | undefined;
 

@@ -290,9 +290,14 @@ export const FormBuilder: React.FC = () => {
             <Copy size={20} />
           </button>
         </div>
-        <button onClick={() => window.location.href = '/'} className="primary-button large">
-          Go to Dashboard
-        </button>
+        <div style={{ display: 'flex', gap: '1rem', justifyContent: 'center' }}>
+          <button onClick={() => window.location.href = '/'} className="secondary-button large">
+            Go to Dashboard
+          </button>
+          <button onClick={() => window.location.href = `/forms/${createdFormId}/results`} className="primary-button large">
+            View Empty Results
+          </button>
+        </div>
       </div>
     );
   }

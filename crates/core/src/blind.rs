@@ -40,6 +40,9 @@ impl BlindSigner {
     }
 
     pub fn verify(&self, payload: &[u8], signature: &[u8]) -> bool {
+        if payload.is_empty() || signature.is_empty() {
+            return false;
+        }
         let s = rsa::BigUint::from_bytes_le(signature);
         let n = self.private_key.n();
 
