@@ -161,22 +161,15 @@ export interface FieldValue {
 
 export interface OtpRequest {
   email: string;
+  /** Optional, defaults to 0 */
   formId: number;
 }
 
 export interface OtpVerify {
   email: string;
   code: string;
+  /** Optional, defaults to 0 */
   formId: number;
-}
-
-export interface EmailVerificationRequest {
-  email: string;
-}
-
-export interface EmailVerificationVerify {
-  email: string;
-  code: string;
 }
 
 export interface BlindSubmission {
@@ -188,6 +181,12 @@ export interface BlindSubmission {
 
 export interface FormResults {
   submissions: FormSubmission[];
+  form: Form | undefined;
+  totalSubmissions: number;
+}
+
+export interface UserForms {
+  forms: Form[];
 }
 
 function createBaseOption(): Option {
@@ -1432,140 +1431,6 @@ export const OtpVerify: MessageFns<OtpVerify> = {
   },
 };
 
-function createBaseEmailVerificationRequest(): EmailVerificationRequest {
-  return { email: "" };
-}
-
-export const EmailVerificationRequest: MessageFns<EmailVerificationRequest> = {
-  encode(message: EmailVerificationRequest, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.email !== "") {
-      writer.uint32(10).string(message.email);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): EmailVerificationRequest {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseEmailVerificationRequest();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.email = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): EmailVerificationRequest {
-    return { email: isSet(object.email) ? globalThis.String(object.email) : "" };
-  },
-
-  toJSON(message: EmailVerificationRequest): unknown {
-    const obj: any = {};
-    if (message.email !== "") {
-      obj.email = message.email;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<EmailVerificationRequest>, I>>(base?: I): EmailVerificationRequest {
-    return EmailVerificationRequest.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<EmailVerificationRequest>, I>>(object: I): EmailVerificationRequest {
-    const message = createBaseEmailVerificationRequest();
-    message.email = object.email ?? "";
-    return message;
-  },
-};
-
-function createBaseEmailVerificationVerify(): EmailVerificationVerify {
-  return { email: "", code: "" };
-}
-
-export const EmailVerificationVerify: MessageFns<EmailVerificationVerify> = {
-  encode(message: EmailVerificationVerify, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.email !== "") {
-      writer.uint32(10).string(message.email);
-    }
-    if (message.code !== "") {
-      writer.uint32(18).string(message.code);
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): EmailVerificationVerify {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseEmailVerificationVerify();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.email = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.code = reader.string();
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): EmailVerificationVerify {
-    return {
-      email: isSet(object.email) ? globalThis.String(object.email) : "",
-      code: isSet(object.code) ? globalThis.String(object.code) : "",
-    };
-  },
-
-  toJSON(message: EmailVerificationVerify): unknown {
-    const obj: any = {};
-    if (message.email !== "") {
-      obj.email = message.email;
-    }
-    if (message.code !== "") {
-      obj.code = message.code;
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<EmailVerificationVerify>, I>>(base?: I): EmailVerificationVerify {
-    return EmailVerificationVerify.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<EmailVerificationVerify>, I>>(object: I): EmailVerificationVerify {
-    const message = createBaseEmailVerificationVerify();
-    message.email = object.email ?? "";
-    message.code = object.code ?? "";
-    return message;
-  },
-};
-
 function createBaseBlindSubmission(): BlindSubmission {
   return { payload: new Uint8Array(0), signature: new Uint8Array(0), submission: new Uint8Array(0) };
 }
@@ -1659,13 +1524,19 @@ export const BlindSubmission: MessageFns<BlindSubmission> = {
 };
 
 function createBaseFormResults(): FormResults {
-  return { submissions: [] };
+  return { submissions: [], form: undefined, totalSubmissions: 0 };
 }
 
 export const FormResults: MessageFns<FormResults> = {
   encode(message: FormResults, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
     for (const v of message.submissions) {
       FormSubmission.encode(v!, writer.uint32(10).fork()).join();
+    }
+    if (message.form !== undefined) {
+      Form.encode(message.form, writer.uint32(18).fork()).join();
+    }
+    if (message.totalSubmissions !== 0) {
+      writer.uint32(24).uint64(message.totalSubmissions);
     }
     return writer;
   },
@@ -1685,6 +1556,22 @@ export const FormResults: MessageFns<FormResults> = {
           message.submissions.push(FormSubmission.decode(reader, reader.uint32()));
           continue;
         }
+        case 2: {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.form = Form.decode(reader, reader.uint32());
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
+            break;
+          }
+
+          message.totalSubmissions = longToNumber(reader.uint64());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1699,6 +1586,12 @@ export const FormResults: MessageFns<FormResults> = {
       submissions: globalThis.Array.isArray(object?.submissions)
         ? object.submissions.map((e: any) => FormSubmission.fromJSON(e))
         : [],
+      form: isSet(object.form) ? Form.fromJSON(object.form) : undefined,
+      totalSubmissions: isSet(object.totalSubmissions)
+        ? globalThis.Number(object.totalSubmissions)
+        : isSet(object.total_submissions)
+        ? globalThis.Number(object.total_submissions)
+        : 0,
     };
   },
 
@@ -1706,6 +1599,12 @@ export const FormResults: MessageFns<FormResults> = {
     const obj: any = {};
     if (message.submissions?.length) {
       obj.submissions = message.submissions.map((e) => FormSubmission.toJSON(e));
+    }
+    if (message.form !== undefined) {
+      obj.form = Form.toJSON(message.form);
+    }
+    if (message.totalSubmissions !== 0) {
+      obj.totalSubmissions = Math.round(message.totalSubmissions);
     }
     return obj;
   },
@@ -1716,6 +1615,66 @@ export const FormResults: MessageFns<FormResults> = {
   fromPartial<I extends Exact<DeepPartial<FormResults>, I>>(object: I): FormResults {
     const message = createBaseFormResults();
     message.submissions = object.submissions?.map((e) => FormSubmission.fromPartial(e)) || [];
+    message.form = (object.form !== undefined && object.form !== null) ? Form.fromPartial(object.form) : undefined;
+    message.totalSubmissions = object.totalSubmissions ?? 0;
+    return message;
+  },
+};
+
+function createBaseUserForms(): UserForms {
+  return { forms: [] };
+}
+
+export const UserForms: MessageFns<UserForms> = {
+  encode(message: UserForms, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    for (const v of message.forms) {
+      Form.encode(v!, writer.uint32(10).fork()).join();
+    }
+    return writer;
+  },
+
+  decode(input: BinaryReader | Uint8Array, length?: number): UserForms {
+    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
+    const end = length === undefined ? reader.len : reader.pos + length;
+    const message = createBaseUserForms();
+    while (reader.pos < end) {
+      const tag = reader.uint32();
+      switch (tag >>> 3) {
+        case 1: {
+          if (tag !== 10) {
+            break;
+          }
+
+          message.forms.push(Form.decode(reader, reader.uint32()));
+          continue;
+        }
+      }
+      if ((tag & 7) === 4 || tag === 0) {
+        break;
+      }
+      reader.skip(tag & 7);
+    }
+    return message;
+  },
+
+  fromJSON(object: any): UserForms {
+    return { forms: globalThis.Array.isArray(object?.forms) ? object.forms.map((e: any) => Form.fromJSON(e)) : [] };
+  },
+
+  toJSON(message: UserForms): unknown {
+    const obj: any = {};
+    if (message.forms?.length) {
+      obj.forms = message.forms.map((e) => Form.toJSON(e));
+    }
+    return obj;
+  },
+
+  create<I extends Exact<DeepPartial<UserForms>, I>>(base?: I): UserForms {
+    return UserForms.fromPartial(base ?? ({} as any));
+  },
+  fromPartial<I extends Exact<DeepPartial<UserForms>, I>>(object: I): UserForms {
+    const message = createBaseUserForms();
+    message.forms = object.forms?.map((e) => Form.fromPartial(e)) || [];
     return message;
   },
 };

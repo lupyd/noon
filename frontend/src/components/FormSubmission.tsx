@@ -105,7 +105,7 @@ export const FormSubmission: React.FC = () => {
     setIsVerifying(true);
     try {
       const encoded = encodeOtpRequest({ email: userEmail, formId: parseInt(id!) });
-      const response = await fetch(`http://localhost:39210/forms/${id}/request_otp`, {
+      const response = await fetch(`http://localhost:39210/email/request_otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         // @ts-ignore
@@ -128,7 +128,7 @@ export const FormSubmission: React.FC = () => {
     setIsVerifying(true);
     try {
       const encoded = encodeOtpVerify({ email: userEmail, code: otpCode, formId: parseInt(id!) });
-      const response = await fetch(`http://localhost:39210/forms/${id}/verify_otp`, {
+      const response = await fetch(`http://localhost:39210/email/verify_otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         // @ts-ignore

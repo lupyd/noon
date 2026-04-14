@@ -168,16 +168,52 @@ pub async fn submit_form(pool: &Pool, submission: FormSubmission<'_>) -> anyhow:
     Ok(())
 }
 
-pub async fn get_form_submissions(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<Vec<u8>>> {
+pub async fn get_form_submissions(
+    pool: &Pool,
+    form_id: u64,
+    limit: i64,
+    offset: i64,
+) -> anyhow::Result<Vec<Vec<u8>>> {
     let client = pool.get().await?;
     let rows = client
         .query(
-            "SELECT data FROM form_submissions WHERE form_id = $1 ORDER BY id DESC",
-            &[&(form_id as i64)],
+            "SELECT data FROM form_submissions WHERE form_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
+            &[&(form_id as i64), &limit, &offset],
+        )
+        .await?;
+
+    Ok(rows.into_iter().map(|r| r.get(0)).collect())
+}
+
+pub async fn get_forms_by_owner(pool: &Pool, owner: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+    let client = pool.get().await?;
+    let rows = client
+        .query(
+            "SELECT id, name, description, extract(epoch from created_at)::bigint as created_at FROM forms WHERE owner = $1 ORDER BY created_at DESC",
+            &[&owner],
         )
         .await?;
     
-    Ok(rows.into_iter().map(|r| r.get(0)).collect())
+    let mut results = Vec::new();
+    for row in rows {
+        let id: i64 = row.get(0);
+        let name: String = row.get(1);
+        let description: String = row.get(2);
+        let created_at: i64 = row.get(3);
+        
+        let mut form = Form::default();
+        form.id = id as u64;
+        form.name = name.into();
+        form.description = description.into();
+        form.created_at = created_at as u64;
+        
+        let mut out = Vec::new();
+        let mut writer = quick_protobuf::Writer::new(&mut out);
+        form.write_message(&mut writer)?;
+        results.push(out);
+    }
+    
+    Ok(results)
 }
 
 
@@ -342,4 +378,16 @@ pub async fn verify_email_jwt(pool: &Pool, token: &str) -> anyhow::Result<(Strin
     }
 
     Err(anyhow::anyhow!("Invalid token"))
+}
+
+pub async fn get_form_submissions_count(pool: &Pool, form_id: u64) -> anyhow::Result<u64> {
+    let client = pool.get().await?;
+    let row = client
+        .query_one(
+            "SELECT COUNT(*) FROM form_submissions WHERE form_id = $1",
+            &[&(form_id as i64)],
+        )
+        .await?;
+    let count: i64 = row.get(0);
+    Ok(count as u64)
 }

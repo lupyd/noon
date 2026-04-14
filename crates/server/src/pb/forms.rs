@@ -541,74 +541,6 @@ impl<'a> MessageWrite for OtpVerify<'a> {
 
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Default, PartialEq, Clone)]
-pub struct EmailVerificationRequest<'a> {
-    pub email: Cow<'a, str>,
-}
-
-impl<'a> MessageRead<'a> for EmailVerificationRequest<'a> {
-    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
-        let mut msg = Self::default();
-        while !r.is_eof() {
-            match r.next_tag(bytes) {
-                Ok(10) => msg.email = r.read_string(bytes).map(Cow::Borrowed)?,
-                Ok(t) => { r.read_unknown(bytes, t)?; }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(msg)
-    }
-}
-
-impl<'a> MessageWrite for EmailVerificationRequest<'a> {
-    fn get_size(&self) -> usize {
-        0
-        + if self.email == "" { 0 } else { 1 + sizeof_len((&self.email).len()) }
-    }
-
-    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
-        if self.email != "" { w.write_with_tag(10, |w| w.write_string(&**&self.email))?; }
-        Ok(())
-    }
-}
-
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Debug, Default, PartialEq, Clone)]
-pub struct EmailVerificationVerify<'a> {
-    pub email: Cow<'a, str>,
-    pub code: Cow<'a, str>,
-}
-
-impl<'a> MessageRead<'a> for EmailVerificationVerify<'a> {
-    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
-        let mut msg = Self::default();
-        while !r.is_eof() {
-            match r.next_tag(bytes) {
-                Ok(10) => msg.email = r.read_string(bytes).map(Cow::Borrowed)?,
-                Ok(18) => msg.code = r.read_string(bytes).map(Cow::Borrowed)?,
-                Ok(t) => { r.read_unknown(bytes, t)?; }
-                Err(e) => return Err(e),
-            }
-        }
-        Ok(msg)
-    }
-}
-
-impl<'a> MessageWrite for EmailVerificationVerify<'a> {
-    fn get_size(&self) -> usize {
-        0
-        + if self.email == "" { 0 } else { 1 + sizeof_len((&self.email).len()) }
-        + if self.code == "" { 0 } else { 1 + sizeof_len((&self.code).len()) }
-    }
-
-    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
-        if self.email != "" { w.write_with_tag(10, |w| w.write_string(&**&self.email))?; }
-        if self.code != "" { w.write_with_tag(18, |w| w.write_string(&**&self.code))?; }
-        Ok(())
-    }
-}
-
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Debug, Default, PartialEq, Clone)]
 pub struct BlindSubmission<'a> {
     pub payload: Cow<'a, [u8]>,
     pub signature: Cow<'a, [u8]>,
@@ -651,6 +583,8 @@ impl<'a> MessageWrite for BlindSubmission<'a> {
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct FormResults<'a> {
     pub submissions: Vec<FormSubmission<'a>>,
+    pub form: Option<Form<'a>>,
+    pub total_submissions: u64,
 }
 
 impl<'a> MessageRead<'a> for FormResults<'a> {
@@ -659,6 +593,8 @@ impl<'a> MessageRead<'a> for FormResults<'a> {
         while !r.is_eof() {
             match r.next_tag(bytes) {
                 Ok(10) => msg.submissions.push(r.read_message::<FormSubmission>(bytes)?),
+                Ok(18) => msg.form = Some(r.read_message::<Form>(bytes)?),
+                Ok(24) => msg.total_submissions = r.read_uint64(bytes)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -671,10 +607,46 @@ impl<'a> MessageWrite for FormResults<'a> {
     fn get_size(&self) -> usize {
         0
         + self.submissions.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
+        + self.form.as_ref().map_or(0, |m| 1 + sizeof_len((m).get_size()))
+        + if self.total_submissions == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.total_submissions) as u64) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
         for s in &self.submissions { w.write_with_tag(10, |w| w.write_message(s))?; }
+        if let Some(ref s) = self.form { w.write_with_tag(18, |w| w.write_message(s))?; }
+        if self.total_submissions != 0u64 { w.write_with_tag(24, |w| w.write_uint64(*&self.total_submissions))?; }
+        Ok(())
+    }
+}
+
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Debug, Default, PartialEq, Clone)]
+pub struct UserForms<'a> {
+    pub forms: Vec<Form<'a>>,
+}
+
+impl<'a> MessageRead<'a> for UserForms<'a> {
+    fn from_reader(r: &mut BytesReader, bytes: &'a [u8]) -> Result<Self> {
+        let mut msg = Self::default();
+        while !r.is_eof() {
+            match r.next_tag(bytes) {
+                Ok(10) => msg.forms.push(r.read_message::<Form>(bytes)?),
+                Ok(t) => { r.read_unknown(bytes, t)?; }
+                Err(e) => return Err(e),
+            }
+        }
+        Ok(msg)
+    }
+}
+
+impl<'a> MessageWrite for UserForms<'a> {
+    fn get_size(&self) -> usize {
+        0
+        + self.forms.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
+    }
+
+    fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
+        for s in &self.forms { w.write_with_tag(10, |w| w.write_message(s))?; }
         Ok(())
     }
 }

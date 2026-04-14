@@ -163,7 +163,7 @@ pub async fn service(
 
     let path = request.uri().path().to_string();
 
-    if path.starts_with("/forms/") || path.starts_with("/email/") {
+    if path.starts_with("/forms") || path.starts_with("/email") {
         return forms_routes::handle_request(request, sd, &path).await;
     }
 

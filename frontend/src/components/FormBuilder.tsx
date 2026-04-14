@@ -1,12 +1,11 @@
 import React, { useState } from 'react';
 import { useAuth0 } from '@auth0/auth0-react';
+import { useUnifiedAuth } from '../auth';
 import { Plus, Trash2, Send, CheckCircle, Copy, LogIn, Mail } from 'lucide-react';
-import { 
-  encodeForm, 
-  encodeEmailVerificationRequest, 
-  encodeEmailVerificationVerify, 
-  type FormType, 
-  FieldType 
+import {
+  encodeForm,
+  type FormType,
+  FieldType
 } from '../proto';
 import { SunLogo } from './logo';
 
@@ -34,7 +33,15 @@ const FIELD_TYPES = [
 ];
 
 export const FormBuilder: React.FC = () => {
-  const { isAuthenticated, loginWithRedirect, isLoading, getAccessTokenSilently } = useAuth0();
+  const { loginWithRedirect } = useAuth0();
+  const {
+    isAuthenticated,
+    email: verifiedEmail,
+    isInitialLoading: isLoading,
+    getAuthHeaders,
+    requestEmailCode,
+    loginWithEmail: verifyEmailCode
+  } = useUnifiedAuth();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [fields, setFields] = useState<FormFieldInput[]>([]);
@@ -47,8 +54,6 @@ export const FormBuilder: React.FC = () => {
   const [emailVerificationCode, setEmailVerificationCode] = useState('');
   const [showEmailVerifyInput, setShowEmailVerifyInput] = useState(false);
   const [emailVerifyError, setEmailVerifyError] = useState<string | null>(null);
-  const [emailToken, setEmailToken] = useState<string | null>(localStorage.getItem('noon_email_token'));
-  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(localStorage.getItem('noon_verified_email'));
 
   const addField = () => {
     const fieldName = `field_${fields.length + 1}`;
@@ -63,7 +68,7 @@ export const FormBuilder: React.FC = () => {
   };
 
   const removeField = (index: number) => {
-    setFields(fields.filter((_, i) => i !== index));
+    setFields(fields.filter((_, i: number) => i !== index));
   };
 
   const updateField = (index: number, updates: Partial<FormFieldInput>) => {
@@ -92,14 +97,14 @@ export const FormBuilder: React.FC = () => {
 
     const mentionedEmailsArray = mentionedEmails
       .split(',')
-      .map(e => e.trim())
-      .filter(e => e.length > 0);
+      .map((e: string) => e.trim())
+      .filter((e: string) => e.length > 0);
 
     const formPayload: FormType = {
       id: 0,
       name,
       description,
-      fields: fields.map(f => ({
+      fields: fields.map((f: FormFieldInput) => ({
         type: f.type,
         name: f.name,
         label: f.label,
@@ -118,20 +123,10 @@ export const FormBuilder: React.FC = () => {
     try {
       const encoded = encodeForm(formPayload);
 
-      let headers: Record<string, string> = {
+      const headers = {
         'Content-Type': 'application/octet-stream',
+        ...(await getAuthHeaders())
       };
-
-      if (emailToken) {
-        headers['Authorization'] = `EmailOnly ${emailToken}`;
-      } else if (isAuthenticated) {
-        try {
-          const token = await getAccessTokenSilently();
-          headers['Authorization'] = `Bearer ${token}`;
-        } catch (e) {
-          console.warn('Could not get access token implicitly', e);
-        }
-      }
 
       const response = await fetch('http://localhost:39210/forms/create', {
         method: 'POST',
@@ -154,49 +149,26 @@ export const FormBuilder: React.FC = () => {
     }
   };
 
-  const requestEmailVerification = async () => {
+  const triggerEmailRequest = async () => {
     if (!emailInput) {
       setEmailVerifyError('Please enter your email first');
       return;
     }
     try {
-      const encoded = encodeEmailVerificationRequest({ email: emailInput });
-      const response = await fetch('http://localhost:39210/email/request_verification', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        // @ts-expect-error
-        body: encoded,
-      });
-      if (!response.ok) {
-        throw new Error('Failed to send verification email');
-      }
+      await requestEmailCode(emailInput);
       setShowEmailVerifyInput(true);
     } catch (err) {
       setEmailVerifyError((err as Error).message);
     }
   };
 
-  const verifyEmail = async () => {
+  const triggerEmailVerify = async () => {
     if (!emailInput || !emailVerificationCode) {
       setEmailVerifyError('Please enter the verification code');
       return;
     }
     try {
-      const encoded = encodeEmailVerificationVerify({ email: emailInput, code: emailVerificationCode });
-      const response = await fetch('http://localhost:39210/email/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        // @ts-expect-error
-        body: encoded,
-      });
-      if (!response.ok) {
-        throw new Error('Invalid verification code');
-      }
-      const token = await response.text();
-      setVerifiedEmail(emailInput);
-      setEmailToken(token);
-      localStorage.setItem('noon_verified_email', emailInput);
-      localStorage.setItem('noon_email_token', token);
+      await verifyEmailCode(emailInput, emailVerificationCode);
       setShowEmailVerifyInput(false);
       setEmailVerifyError(null);
     } catch (err) {
@@ -237,7 +209,7 @@ export const FormBuilder: React.FC = () => {
           <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
         </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); requestEmailVerification(); }} style={{ maxWidth: '400px', margin: '0 auto' }}>
+        <form onSubmit={(e) => { e.preventDefault(); triggerEmailRequest(); }} style={{ maxWidth: '400px', margin: '0 auto' }}>
           <div className="form-group" style={{ marginBottom: '1.5rem' }}>
             <input
               type="email"
@@ -255,7 +227,7 @@ export const FormBuilder: React.FC = () => {
 
         <div style={{ maxWidth: '400px', margin: '0 auto' }}>
           {showEmailVerifyInput && (
-            <form onSubmit={(e) => { e.preventDefault(); verifyEmail(); }} className="animate-fade-in" style={{ marginTop: '2rem' }}>
+            <form onSubmit={(e) => { e.preventDefault(); triggerEmailVerify(); }} className="animate-fade-in" style={{ marginTop: '2rem' }}>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <input
                   type="text"
@@ -353,7 +325,7 @@ export const FormBuilder: React.FC = () => {
           <span className="badge">{fields.length} Fields</span>
         </div>
 
-        {fields && fields.map((field, index) => (
+        {fields && fields.map((field: FormFieldInput, index: number) => (
           <div key={`${index}-${field.name}`} className="field-card card animate-fade-in" style={{ padding: '1.5rem 2rem', marginBottom: '1.5rem' }}>
             <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
               <div style={{ flex: 2 }}>

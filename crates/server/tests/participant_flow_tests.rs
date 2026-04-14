@@ -1,5 +1,5 @@
 use noon_server::pb::forms::{
-    EmailVerificationRequest, EmailVerificationVerify, Form, FormSubmission, BlindSubmission
+    OtpRequest, OtpVerify, Form, FormSubmission, BlindSubmission
 };
 use noon_server::start_http_server;
 use quick_protobuf::{MessageWrite, Writer};
@@ -184,20 +184,22 @@ async fn test_complete_flow_creator_to_submitter() {
     assert_eq!(get_res.status(), StatusCode::UNAUTHORIZED);
 
     // 6. Verify Email (obtained global token)
-    let mut verify_req = EmailVerificationRequest::default();
+    let mut verify_req = OtpRequest::default();
     verify_req.email = test_email.clone().into();
+    verify_req.form_id = 0; // Global
     client
-        .post(format!("{}/email/request_verification", base_url))
+        .post(format!("{}/email/request_otp", base_url))
         .body(serialize_proto(&verify_req))
         .send()
         .await
         .unwrap();
 
-    let mut verify_confirm = EmailVerificationVerify::default();
+    let mut verify_confirm = OtpVerify::default();
     verify_confirm.email = test_email.clone().into();
     verify_confirm.code = "123456".into(); // Predictable due to EMULATOR_MODE
+    verify_confirm.form_id = 0; // Global
     let verify_res = client
-        .post(format!("{}/email/verify", base_url))
+        .post(format!("{}/email/verify_otp", base_url))
         .body(serialize_proto(&verify_confirm))
         .send()
         .await
@@ -206,12 +208,11 @@ async fn test_complete_flow_creator_to_submitter() {
     let _global_token = verify_res.text().await.unwrap();
 
     // 6.5 Request OTP for specific form (now mandatory)
-    use noon_server::pb::forms::OtpRequest;
     let mut otp_req = OtpRequest::default();
     otp_req.email = test_email.clone().into();
     otp_req.form_id = form_id;
     let otp_res = client
-        .post(format!("{}/forms/{}/request_otp", base_url, form_id))
+        .post(format!("{}/email/request_otp", base_url))
         .body(serialize_proto(&otp_req))
         .send()
         .await
@@ -219,13 +220,12 @@ async fn test_complete_flow_creator_to_submitter() {
     assert_eq!(otp_res.status(), StatusCode::OK);
 
     // 6.6 Verify OTP to get form-specific token
-    use noon_server::pb::forms::OtpVerify;
     let mut otp_verify = OtpVerify::default();
     otp_verify.email = test_email.clone().into();
     otp_verify.code = "123456".into(); // Predictable due to EMULATOR_MODE
     otp_verify.form_id = form_id;
     let verify_otp_res = client
-        .post(format!("{}/forms/{}/verify_otp", base_url, form_id))
+        .post(format!("{}/email/verify_otp", base_url))
         .body(serialize_proto(&otp_verify))
         .send()
         .await

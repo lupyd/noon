@@ -7,8 +7,7 @@ use std::sync::Arc;
 
 use crate::forms_db;
 use crate::pb::forms::{
-    BlindSubmission, EmailVerificationRequest, EmailVerificationVerify, Form,
-    FormSubmission, OtpRequest, OtpVerify,
+    BlindSubmission, Form, FormSubmission, OtpRequest, OtpVerify,
 };
 use crate::shared_data::SharedData;
 use crate::{
@@ -28,12 +27,16 @@ pub async fn handle_request(
         return create_form_route(req, sd).await;
     }
 
-    if method == Method::POST && path == "/email/request_verification" {
-        return request_email_verification_route(req, sd).await;
+    if method == Method::GET && path == "/forms" {
+        return list_my_forms_route(req, sd).await;
     }
 
-    if method == Method::POST && path == "/email/verify" {
-        return verify_email_route(req, sd).await;
+    if method == Method::POST && path == "/email/request_otp" {
+        return request_otp_route(req, sd).await;
+    }
+
+    if method == Method::POST && path == "/email/verify_otp" {
+        return verify_otp_route(req, sd).await;
     }
 
     if let Some(rest) = path.strip_prefix("/forms/") {
@@ -56,8 +59,6 @@ pub async fn handle_request(
                 (Method::GET, "public_key") => return get_public_key_route(req, sd, form_id).await,
                 (Method::POST, "submit") => return submit_blind_route(req, sd, form_id).await,
                 (Method::POST, "blind_sign") => return blind_sign_route(req, sd, form_id).await,
-                (Method::POST, "request_otp") => return request_otp_route(req, sd, form_id).await,
-                (Method::POST, "verify_otp") => return verify_otp_route(req, sd, form_id).await,
                 (Method::GET, "results") => return get_results_route(req, sd, form_id).await,
                 _ => return Ok(not_found_response()),
             }
@@ -336,22 +337,80 @@ async fn get_results_route(
         ));
     }
 
-    match forms_db::get_form_submissions(&sd.db, form_id).await {
-        Ok(subs_bytes) => {
+    let query = req.uri().query().unwrap_or("");
+    let mut limit = 50;
+    let mut offset = 0;
+
+    for part in query.split('&') {
+        let mut kv = part.splitn(2, '=');
+        let k = kv.next().unwrap_or("");
+        let v = kv.next().unwrap_or("");
+        if k == "limit" {
+            limit = v.parse().unwrap_or(50);
+        } else if k == "offset" {
+            offset = v.parse().unwrap_or(0);
+        }
+    }
+
+    let subs_bytes = match forms_db::get_form_submissions(&sd.db, form_id, limit, offset).await {
+        Ok(s) => s,
+        Err(e) => {
+            log::error!("get_form_submissions error: {:?}", e);
+            return Ok(internal_error_response());
+        }
+    };
+
+    let total_count = match forms_db::get_form_submissions_count(&sd.db, form_id).await {
+        Ok(c) => c,
+        Err(_) => 0,
+    };
+
+    let mut out = Vec::new();
+    let mut writer = quick_protobuf::Writer::new(&mut out);
+
+    for sub_bytes in subs_bytes {
+        // FormResults has field 1 as repeated FormSubmission (tag 10)
+        writer.write_tag(10).expect("Failed to write tag");
+        writer.write_bytes(&sub_bytes).expect("Failed to write bytes");
+    }
+
+    // Tag 18: Form form (tag 2, length delimited)
+    writer.write_tag(18).expect("Failed to write tag");
+    writer.write_bytes(&form_bytes).expect("Failed to write bytes");
+
+    // Tag 24: uint64 total_submissions (tag 3, varint)
+    writer.write_tag(24).expect("Failed to write tag");
+    writer.write_uint64(total_count).expect("Failed to write uint64");
+
+    Ok(ok_response(out))
+}
+
+
+async fn list_my_forms_route(
+    req: Request<Incoming>,
+    sd: Arc<SharedData>,
+) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
+    let participant = match get_authorized_participant(req.headers(), &sd, None).await {
+        Some(p) => p,
+        None => return Ok(unauthorized_response()),
+    };
+
+    match forms_db::get_forms_by_owner(&sd.db, &participant).await {
+        Ok(forms_bytes) => {
             let mut out = Vec::new();
             let mut writer = quick_protobuf::Writer::new(&mut out);
             
-            for sub_bytes in subs_bytes {
-                // FormResults has field 1 as repeated FormSubmission
-                // Protocol Buffer wire format for field 1 (message) is tag 10
+            for form_bytes in forms_bytes {
+                // UserForms has field 1 as repeated Form
+                // Tag 10
                 writer.write_tag(10).expect("Failed to write tag");
-                writer.write_bytes(&sub_bytes).expect("Failed to write bytes");
+                writer.write_bytes(&form_bytes).expect("Failed to write bytes");
             }
 
             Ok(ok_response(out))
         }
         Err(e) => {
-            log::error!("get_form_submissions error: {:?}", e);
+            log::error!("get_forms_by_owner error: {:?}", e);
             Ok(internal_error_response())
         }
     }
@@ -361,7 +420,6 @@ async fn get_results_route(
 async fn request_otp_route(
     req: Request<Incoming>,
     sd: Arc<SharedData>,
-    form_id: u64,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
         Ok(b) => b,
@@ -374,13 +432,13 @@ async fn request_otp_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
-    common_request_otp(otp_request.email.to_string(), Some(form_id), sd).await
+    let form_id = if otp_request.form_id == 0 { None } else { Some(otp_request.form_id) };
+    common_request_otp(otp_request.email.to_string(), form_id, sd).await
 }
 
 async fn verify_otp_route(
     req: Request<Incoming>,
     sd: Arc<SharedData>,
-    form_id: u64,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
         Ok(b) => b,
@@ -393,10 +451,11 @@ async fn verify_otp_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
+    let form_id = if otp_verify.form_id == 0 { None } else { Some(otp_verify.form_id) };
     common_verify_otp(
         otp_verify.email.to_string(),
         otp_verify.code.to_string(),
-        Some(form_id),
+        form_id,
         sd,
     )
     .await
@@ -483,44 +542,3 @@ async fn common_verify_otp(
     }
 }
 
-async fn request_email_verification_route(
-    req: Request<Incoming>,
-    sd: Arc<SharedData>,
-) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
-    let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
-        Ok(b) => b,
-        Err(_) => return Ok(bad_request_response()),
-    };
-
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
-    let verify_req = match EmailVerificationRequest::from_reader(&mut reader, &body_bytes) {
-        Ok(o) => o,
-        Err(_) => return Ok(bad_request_response()),
-    };
-
-    common_request_otp(verify_req.email.to_string(), None, sd).await
-}
-
-async fn verify_email_route(
-    req: Request<Incoming>,
-    sd: Arc<SharedData>,
-) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
-    let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
-        Ok(b) => b,
-        Err(_) => return Ok(bad_request_response()),
-    };
-
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
-    let verify = match EmailVerificationVerify::from_reader(&mut reader, &body_bytes) {
-        Ok(o) => o,
-        Err(_) => return Ok(bad_request_response()),
-    };
-
-    common_verify_otp(
-        verify.email.to_string(),
-        verify.code.to_string(),
-        None,
-        sd,
-    )
-    .await
-}

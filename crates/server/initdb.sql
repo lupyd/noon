@@ -39,19 +39,14 @@ CREATE TABLE IF NOT EXISTS otp_codes (
     id BIGSERIAL NOT NULL PRIMARY KEY,
     email VARCHAR NOT NULL,
     code VARCHAR NOT NULL,
-    form_id BIGINT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+    form_id BIGINT REFERENCES forms(id) ON DELETE CASCADE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     expires_at TIMESTAMPTZ NOT NULL,
     used BOOLEAN DEFAULT FALSE
 );
 
-CREATE TABLE IF NOT EXISTS email_users (
-    id BIGSERIAL NOT NULL PRIMARY KEY,
-    email VARCHAR NOT NULL UNIQUE,
-    verification_code VARCHAR,
-    verified_at TIMESTAMPTZ,
-    created_at TIMESTAMPTZ DEFAULT NOW()
-);
+-- Ensure form_id is nullable if the table already exists
+ALTER TABLE otp_codes ALTER COLUMN form_id DROP NOT NULL;
 
 CREATE INDEX IF NOT EXISTS idx_otp_codes_form_email ON otp_codes(form_id, email);
 CREATE INDEX IF NOT EXISTS idx_otp_codes_expires ON otp_codes(expires_at) WHERE used = FALSE;

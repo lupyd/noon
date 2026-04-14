@@ -3,12 +3,11 @@ import {
   FormSubmission, 
   OtpRequest, 
   OtpVerify, 
-  EmailVerificationRequest, 
-  EmailVerificationVerify,
   FieldType,
   FieldValue,
   BlindSubmission,
-  FormResults
+  FormResults,
+  UserForms
 } from './generated/forms';
 
 export type { 
@@ -16,11 +15,10 @@ export type {
   FormSubmission as FormSubmissionType, 
   OtpRequest as OtpRequestType, 
   OtpVerify as OtpVerifyType, 
-  EmailVerificationRequest as EmailVerificationRequestType, 
-  EmailVerificationVerify as EmailVerificationVerifyType,
   FieldValue,
   BlindSubmission as BlindSubmissionType,
-  FormResults as FormResultsType
+  FormResults as FormResultsType,
+  UserForms as UserFormsType
 };
 
 export { FieldType };
@@ -49,18 +47,14 @@ export function decodeFormResults(buffer: Uint8Array): FormResults {
   return FormResults.decode(buffer);
 }
 
+export function decodeUserForms(buffer: Uint8Array): UserForms {
+  return UserForms.decode(buffer);
+}
+
 export function encodeOtpRequest(payload: OtpRequest): Uint8Array {
   return OtpRequest.encode(payload).finish();
 }
 
 export function encodeOtpVerify(payload: OtpVerify): Uint8Array {
   return OtpVerify.encode(payload).finish();
-}
-
-export function encodeEmailVerificationRequest(payload: EmailVerificationRequest): Uint8Array {
-  return EmailVerificationRequest.encode(payload).finish();
-}
-
-export function encodeEmailVerificationVerify(payload: EmailVerificationVerify): Uint8Array {
-  return EmailVerificationVerify.encode(payload).finish();
 }

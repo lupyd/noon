@@ -25,7 +25,7 @@ class Flare {
   }
 
   draw(ctx: CanvasRenderingContext2D, t: number, x: number, y: number, color: string, scale: number) {
-    const coreRadius = 150 * scale; // Increased base core radius
+    const coreRadius = 150 * scale;
     const flicker = Math.sin(t * this.speed + this.index) * 20 * scale;
     const currentLen = coreRadius + (120 * this.lenMult * scale) + flicker;
 
@@ -66,7 +66,7 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
     let time = 0;
     let animationFrameId: number;
 
-    const BASE_HEIGHT = 400; // Reference height for scaling
+    const BASE_HEIGHT = 400;
     const scale = height / BASE_HEIGHT;
     const FLARE_COUNT = 18;
 
@@ -99,13 +99,11 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
       const coreRadius = 150 * scale;
       ctx.save();
 
-      // 1. Back Layer
       ctx.save();
       ctx.translate(x, y); ctx.rotate(sunRotation); ctx.translate(-x, -y);
       flareSet.back.forEach(f => f.draw(ctx, t, x, y, 'rgba(255, 255, 255, 0.15)', scale));
       ctx.restore();
 
-      // 2. Core
       ctx.shadowBlur = 40 * scale;
       ctx.shadowColor = 'rgba(255, 255, 255, 0.2)';
       ctx.beginPath();
@@ -114,10 +112,8 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
       ctx.fill();
       ctx.shadowBlur = 0;
 
-      // 3. Spiral
-      drawSpiral(ctx, x, y, t * 0.003, scale);
+      drawSpiral(ctx, x, y, t * 0.0008, scale);
 
-      // 4. Front Layer
       ctx.save();
       ctx.translate(x, y); ctx.rotate(-sunRotation * 1.5); ctx.translate(-x, -y);
       flareSet.front.forEach(f => f.draw(ctx, t, x, y, 'rgba(255, 255, 255, 0.6)', scale));
@@ -126,28 +122,31 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
       ctx.restore();
     }
 
-    const renderStatic = () => {
+    const render = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
+      time += 1.0;
 
       const centerX = canvas.width / 2;
       const centerY = canvas.height / 2;
 
-      // Static positions instead of orbiting
-      const offset = 80 * scale;
-      const x1 = centerX - offset;
-      const y1 = centerY;
-      const x2 = centerX + offset;
-      const y2 = centerY;
+      // Orbit logic
+      const orbitRadius = 80 * scale;
+      const orbitSpeed = 0.002;
+      const x1 = centerX + Math.cos(time * orbitSpeed) * orbitRadius;
+      const y1 = centerY + Math.sin(time * orbitSpeed) * orbitRadius;
+      const x2 = centerX + Math.cos(time * orbitSpeed + Math.PI) * orbitRadius;
+      const y2 = centerY + Math.sin(time * orbitSpeed + Math.PI) * orbitRadius;
 
-      // Draw suns with time = 0 for static look
-      drawSun(ctx, x1, y1, 0, sun1Flares, 0, scale);
-      drawSun(ctx, x2, y2, 0, sun2Flares, 0.5, scale);
+      drawSun(ctx, x1, y1, time, sun1Flares, time * 0.002, scale);
+      drawSun(ctx, x2, y2, time, sun2Flares, 0.5 + time * 0.003, scale);
+
+      animationFrameId = requestAnimationFrame(render);
     };
 
-    renderStatic();
+    render();
 
     return () => {
-      // No animation to cancel
+      cancelAnimationFrame(animationFrameId);
     };
   }, [height]);
 
@@ -160,7 +159,7 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
         height: height * 1.2,
         width: height * 1.8,
         verticalAlign: 'middle',
-        margin: `0 -${height * 0.3}px` // Slightly more overlap
+        margin: `0 -${height * 0.3}px`
       }}
     />
   );

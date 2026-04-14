@@ -1,29 +1,31 @@
-use noon_server::pb::forms::{FieldType, FieldValue, Form, FormSubmission, mod_FieldValue, mod_Form, BlindSubmission};
+use noon_server::pb::forms::{
+    BlindSubmission, FieldType, FieldValue, Form, FormSubmission, mod_FieldValue, mod_Form,
+};
 use noon_server::start_http_server;
 use quick_protobuf::{MessageWrite, Writer};
 use reqwest::{Client, StatusCode};
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::time::Duration;
-// use rsa::traits::PublicKeyParts;
 
-use noon_core::blind::{create_blinded_message, unblind_signature};
 use base64::Engine;
+use noon_core::blind::{create_blinded_message, unblind_signature};
 
 fn serialize_proto<T: MessageWrite>(msg: &T) -> Vec<u8> {
     let mut bytes = Vec::new();
     let mut writer = Writer::new(&mut bytes);
-    msg.write_message(&mut writer).expect("Failed to serialize protobuf");
+    msg.write_message(&mut writer)
+        .expect("Failed to serialize protobuf");
     bytes
 }
 
 async fn setup_test_server(port: u16) -> String {
     unsafe {
-        std::env::remove_var("NO_TOKEN_VERIFICATION");
-        std::env::remove_var("DB_CONN_STR");
-        std::env::remove_var("EMULATOR_MODE");
         std::env::set_var("NO_TOKEN_VERIFICATION", "true");
-        std::env::set_var("DB_CONN_STR", "postgres://postgres:password123@localhost:39222/noondb?sslmode=disable");
+        std::env::set_var(
+            "DB_CONN_STR",
+            "postgres://postgres:password123@localhost:39222/noondb?sslmode=disable",
+        );
         std::env::set_var("EMULATOR_MODE", "true");
     }
 
@@ -55,7 +57,12 @@ async fn test_create_form() {
         .await
         .expect("Failed to create form");
 
-    assert_eq!(res.status(), StatusCode::OK, "Failed to create form: {}", res.text().await.unwrap());
+    assert_eq!(
+        res.status(),
+        StatusCode::OK,
+        "Failed to create form: {}",
+        res.text().await.unwrap()
+    );
 }
 
 #[tokio::test]
@@ -122,11 +129,18 @@ async fn submit_form_blind(
         .await
         .expect("Failed to get public key");
     assert_eq!(pk_res.status(), StatusCode::OK);
-    let pk_body = pk_res.json::<serde_json::Value>().await.expect("Failed to parse public key");
-    
-    let n_bytes = base64::prelude::BASE64_STANDARD.decode(pk_body["n"].as_str().unwrap()).unwrap();
-    let e_bytes = base64::prelude::BASE64_STANDARD.decode(pk_body["e"].as_str().unwrap()).unwrap();
-    
+    let pk_body = pk_res
+        .json::<serde_json::Value>()
+        .await
+        .expect("Failed to parse public key");
+
+    let n_bytes = base64::prelude::BASE64_STANDARD
+        .decode(pk_body["n"].as_str().unwrap())
+        .unwrap();
+    let e_bytes = base64::prelude::BASE64_STANDARD
+        .decode(pk_body["e"].as_str().unwrap())
+        .unwrap();
+
     let n = rsa::BigUint::from_bytes_le(&n_bytes);
     let e = rsa::BigUint::from_bytes_le(&e_bytes);
     let public_key = rsa::RsaPublicKey::new(n, e).expect("Failed to create public key");
@@ -140,7 +154,11 @@ async fn submit_form_blind(
     if let Some(token) = auth_token {
         req = req.header("Authorization", format!("Bearer {}", token));
     }
-    let sign_res = req.body(blinded.blinded_message()).send().await.expect("Failed to request blind sign");
+    let sign_res = req
+        .body(blinded.blinded_message())
+        .send()
+        .await
+        .expect("Failed to request blind sign");
 
     if sign_res.status() != StatusCode::OK {
         return sign_res.status();
@@ -199,7 +217,8 @@ async fn test_submit_form() {
     values.insert(Cow::Borrowed("question_1"), fv);
     submission.values = values;
 
-    let status = submit_form_blind(&client, &base_url, form_id, &submission, Some("submitter")).await;
+    let status =
+        submit_form_blind(&client, &base_url, form_id, &submission, Some("submitter")).await;
     assert_eq!(status, StatusCode::OK);
 }
 
@@ -348,7 +367,14 @@ async fn test_create_and_submit_form_with_no_token_verification() {
     values.insert(Cow::Borrowed("test_field"), fv);
     submission.values = values;
 
-    let status = submit_form_blind(&client, &base_url, form_id, &submission, Some("submitter_token")).await;
+    let status = submit_form_blind(
+        &client,
+        &base_url,
+        form_id,
+        &submission,
+        Some("submitter_token"),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK, "Form submission failed");
 }
 
@@ -434,7 +460,7 @@ async fn test_create_form_with_otp_verification() {
     otp_req.form_id = form_id;
 
     let otp_res = client
-        .post(format!("{}/forms/{}/request_otp", base_url, form_id))
+        .post(format!("{}/email/request_otp", base_url))
         .body(serialize_proto(&otp_req))
         .send()
         .await
@@ -454,7 +480,7 @@ async fn test_create_form_with_otp_verification() {
     otp_verify.form_id = form_id;
 
     let verify_res = client
-        .post(format!("{}/forms/{}/verify_otp", base_url, form_id))
+        .post(format!("{}/email/verify_otp", base_url))
         .body(serialize_proto(&otp_verify))
         .send()
         .await
@@ -493,7 +519,7 @@ async fn test_request_otp_for_non_otp_form_fails() {
     otp_req.form_id = form_id;
 
     let otp_res = client
-        .post(format!("{}/forms/{}/request_otp", base_url, form_id))
+        .post(format!("{}/email/request_otp", base_url))
         .body(serialize_proto(&otp_req))
         .send()
         .await
@@ -533,7 +559,7 @@ async fn test_request_otp_for_unauthorized_email_fails() {
     otp_req.form_id = form_id;
 
     let otp_res = client
-        .post(format!("{}/forms/{}/request_otp", base_url, form_id))
+        .post(format!("{}/email/request_otp", base_url))
         .body(serialize_proto(&otp_req))
         .send()
         .await

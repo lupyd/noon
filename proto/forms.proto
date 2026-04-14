@@ -76,22 +76,13 @@ message FieldValue {
 
 message OtpRequest {
     string email = 1;
-    uint64 form_id = 2;
+    uint64 form_id = 2; // Optional, defaults to 0
 }
 
 message OtpVerify {
     string email = 1;
     string code = 2;
-    uint64 form_id = 3;
-}
-
-message EmailVerificationRequest {
-    string email = 1;
-}
-
-message EmailVerificationVerify {
-    string email = 1;
-    string code = 2;
+    uint64 form_id = 3; // Optional, defaults to 0
 }
 
 message BlindSubmission {
@@ -102,4 +93,10 @@ message BlindSubmission {
 
 message FormResults {
     repeated FormSubmission submissions = 1;
+    Form form = 2;
+    uint64 total_submissions = 3;
+}
+
+message UserForms {
+    repeated Form forms = 1;
 }
