@@ -4,12 +4,12 @@ import {
     encodeOtpRequest,
     encodeOtpVerify
 } from './proto';
+import { API_URL } from './config';
 
 interface AuthState {
     isAuthenticated: boolean;
     email: string | null;
     token: string | null;
-    isAuth0: boolean;
     isInitialLoading: boolean;
 }
 
@@ -23,9 +23,10 @@ interface AuthContextType extends AuthState {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export const UnifiedAuthProvider: React.FC<{ children: ReactNode, auth0: any }> = ({ children, auth0 }) => {
+export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
     const [email, setEmail] = useState<string | null>(localStorage.getItem('noon_verified_email'));
     const [token, setToken] = useState<string | null>(localStorage.getItem('noon_email_token'));
+    const [isLoading, setIsLoading] = useState(false);
 
     const clearEmailAuth = useCallback(() => {
         setEmail(null);
@@ -35,64 +36,62 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode, auth0: any }> 
     }, []);
 
     const logout = useCallback(() => {
-        if (auth0.isAuthenticated) {
-            auth0.logout({ logoutParams: { returnTo: window.location.origin } });
-        }
         clearEmailAuth();
-    }, [auth0, clearEmailAuth]);
+    }, [clearEmailAuth]);
 
     const requestEmailCode = async (emailAddr: string, formId: number = 0) => {
-        const encoded = encodeOtpRequest({ email: emailAddr, formId });
-        const response = await fetch('http://localhost:39210/email/request_otp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            // @ts-expect-error
-            body: encoded,
-        });
-        if (!response.ok) {
-            throw new Error('Failed to send verification email');
+        setIsLoading(true);
+        try {
+            const encoded = encodeOtpRequest({ email: emailAddr, formId });
+            const response = await fetch(`${API_URL}/email/request_otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                // @ts-expect-error
+                body: encoded,
+            });
+            if (!response.ok) {
+                throw new Error('Failed to send verification email');
+            }
+        } finally {
+            setIsLoading(false);
         }
     };
 
     const loginWithEmail = async (emailAddr: string, code: string, formId: number = 0) => {
-        const encoded = encodeOtpVerify({ email: emailAddr, code, formId });
-        const response = await fetch('http://localhost:39210/email/verify_otp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/octet-stream' },
-            // @ts-expect-error
-            body: encoded,
-        });
-        if (!response.ok) {
-            throw new Error('Invalid verification code');
+        setIsLoading(true);
+        try {
+            const encoded = encodeOtpVerify({ email: emailAddr, code, formId });
+            const response = await fetch(`${API_URL}/email/verify_otp`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/octet-stream' },
+                // @ts-expect-error
+                body: encoded,
+            });
+            if (!response.ok) {
+                throw new Error('Invalid verification code');
+            }
+            const newToken = await response.text();
+            setEmail(emailAddr);
+            setToken(newToken);
+            localStorage.setItem('noon_verified_email', emailAddr);
+            localStorage.setItem('noon_email_token', newToken);
+        } finally {
+            setIsLoading(false);
         }
-        const newToken = await response.text();
-        setEmail(emailAddr);
-        setToken(newToken);
-        localStorage.setItem('noon_verified_email', emailAddr);
-        localStorage.setItem('noon_email_token', newToken);
     };
 
     const getAuthHeaders = useCallback(async () => {
-        if (auth0.isAuthenticated) {
-            try {
-                const auth0Token = await auth0.getAccessTokenSilently();
-                return { 'Authorization': `Bearer ${auth0Token}` };
-            } catch (e) {
-                console.error("Auth0 token fetch failed", e);
-            }
-        }
         if (token) {
             return { 'Authorization': `EmailOnly ${token}` };
         }
         return {};
-    }, [auth0.isAuthenticated, auth0.getAccessTokenSilently, token]);
+    }, [token]);
 
     const value: AuthContextType = {
-        isAuthenticated: auth0.isAuthenticated || !!token,
-        email: auth0.user?.email || email,
+        isAuthenticated: !!token,
+        email: email,
         token: token,
-        isAuth0: auth0.isAuthenticated,
-        isInitialLoading: auth0.isLoading,
+        isInitialLoading: isLoading,
         loginWithEmail,
         requestEmailCode,
         logout,

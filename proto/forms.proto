@@ -35,6 +35,7 @@ message Form {
     repeated Field fields = 8;
     repeated string allowed_participants = 10;
     repeated string mentioned_emails = 12;
+    uint64 deadline = 13;
   
     message Field {
         FieldType type = 1;

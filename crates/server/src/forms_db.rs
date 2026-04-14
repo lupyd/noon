@@ -48,7 +48,9 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
 
     let mentioned_emails: Vec<&str> = form.mentioned_emails.iter().map(|s| s.as_ref()).collect();
 
-    let stmt = "INSERT INTO forms (name, description, owner, fields, mentioned_emails) VALUES ($1, $2, $3, $4, $5) RETURNING id";
+    let deadline = if form.deadline == 0 { None } else { Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(form.deadline)) };
+
+    let stmt = "INSERT INTO forms (name, description, owner, fields, mentioned_emails, deadline) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id";
     let row = client
         .query_one(
             stmt,
@@ -58,6 +60,7 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
                 &owner,
                 &out,
                 &mentioned_emails,
+                &deadline,
             ],
         )
         .await?;
@@ -84,7 +87,7 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
 
 pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>> {
     let client = pool.get().await?;
-    let row = client.query_one("SELECT name, description, owner, fields, extract(epoch from created_at)::bigint as created_at, mentioned_emails FROM forms WHERE id = $1", &[&(form_id as i64)]).await?;
+    let row = client.query_one("SELECT name, description, owner, fields, extract(epoch from created_at)::bigint as created_at, mentioned_emails, extract(epoch from deadline)::bigint as deadline FROM forms WHERE id = $1", &[&(form_id as i64)]).await?;
 
     let name: String = row.get(0);
     let description: String = row.get(1);
@@ -92,6 +95,7 @@ pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>
     let bytes: Vec<u8> = row.get(3);
     let created_at: i64 = row.get(4);
     let mentioned_emails: Vec<String> = row.get(5);
+    let deadline: Option<i64> = row.get(6);
 
     let mut reader = quick_protobuf::BytesReader::from_bytes(&bytes);
     let parsed_form = Form::from_reader(&mut reader, &bytes).unwrap_or_default();
@@ -103,6 +107,7 @@ pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>
     form.owner = owner.into();
     form.created_at = created_at as u64;
     form.mentioned_emails = mentioned_emails.into_iter().map(|s| s.into()).collect();
+    form.deadline = deadline.unwrap_or(0) as u64;
 
     let rows = client
         .query(
@@ -177,7 +182,7 @@ pub async fn get_form_submissions(
     let client = pool.get().await?;
     let rows = client
         .query(
-            "SELECT data FROM form_submissions WHERE form_id = $1 ORDER BY id DESC LIMIT $2 OFFSET $3",
+            "SELECT data FROM form_submissions WHERE form_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
             &[&(form_id as i64), &limit, &offset],
         )
         .await?;
@@ -189,7 +194,7 @@ pub async fn get_forms_by_owner(pool: &Pool, owner: &str) -> anyhow::Result<Vec<
     let client = pool.get().await?;
     let rows = client
         .query(
-            "SELECT id, name, description, extract(epoch from created_at)::bigint as created_at FROM forms WHERE owner = $1 ORDER BY created_at DESC",
+            "SELECT id, name, description, extract(epoch from created_at)::bigint as created_at, extract(epoch from deadline)::bigint as deadline FROM forms WHERE owner = $1 ORDER BY created_at DESC",
             &[&owner],
         )
         .await?;
@@ -200,12 +205,14 @@ pub async fn get_forms_by_owner(pool: &Pool, owner: &str) -> anyhow::Result<Vec<
         let name: String = row.get(1);
         let description: String = row.get(2);
         let created_at: i64 = row.get(3);
+        let deadline: Option<i64> = row.get(4);
         
         let mut form = Form::default();
         form.id = id as u64;
         form.name = name.into();
         form.description = description.into();
         form.created_at = created_at as u64;
+        form.deadline = deadline.unwrap_or(0) as u64;
         
         let mut out = Vec::new();
         let mut writer = quick_protobuf::Writer::new(&mut out);

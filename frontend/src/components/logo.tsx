@@ -83,9 +83,10 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(rotation);
+      const color = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || 'white';
       ctx.beginPath();
       ctx.lineWidth = 6 * scale;
-      ctx.strokeStyle = 'rgba(255, 255, 255, 0.9)';
+      ctx.strokeStyle = color;
       for (let i = 0; i < 40; i++) {
         const angle = 0.3 * i;
         const r = (1 + angle) * 6 * scale;
@@ -99,16 +100,19 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
       const coreRadius = 150 * scale;
       ctx.save();
 
+      const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || 'white';
+      const isDark = primaryColor === 'white' || primaryColor === '#ffffff';
+      
       ctx.save();
       ctx.translate(x, y); ctx.rotate(sunRotation); ctx.translate(-x, -y);
-      flareSet.back.forEach(f => f.draw(ctx, t, x, y, 'rgba(255, 255, 255, 0.15)', scale));
+      flareSet.back.forEach(f => f.draw(ctx, t, x, y, isDark ? 'rgba(255, 255, 255, 0.15)' : 'rgba(0, 0, 0, 0.05)', scale));
       ctx.restore();
 
       ctx.shadowBlur = 40 * scale;
-      ctx.shadowColor = 'rgba(255, 255, 255, 0.2)';
+      ctx.shadowColor = primaryColor === 'white' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)';
       ctx.beginPath();
       ctx.arc(x, y, coreRadius, 0, Math.PI * 2);
-      ctx.fillStyle = 'white';
+      ctx.fillStyle = primaryColor;
       ctx.fill();
       ctx.shadowBlur = 0;
 
@@ -116,7 +120,7 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
 
       ctx.save();
       ctx.translate(x, y); ctx.rotate(-sunRotation * 1.5); ctx.translate(-x, -y);
-      flareSet.front.forEach(f => f.draw(ctx, t, x, y, 'rgba(255, 255, 255, 0.6)', scale));
+      flareSet.front.forEach(f => f.draw(ctx, t, x, y, isDark ? 'rgba(255, 255, 255, 0.6)' : 'rgba(0, 0, 0, 0.4)', scale));
       ctx.restore();
 
       ctx.restore();

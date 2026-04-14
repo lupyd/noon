@@ -1,14 +1,59 @@
 :root {
-  font-family: 'Inter', system-ui, Avenir, Helvetica, Arial, sans-serif;
+  --primary: #ffffff;
+  --bg: #030712;
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --border: rgba(255, 255, 255, 0.1);
+  --success: #10b981;
+  --error: #ef4444;
+  --accent: #6d28d9;
+  --accent-glow: rgba(109, 40, 217, 0.3);
+  
+  font-family: 'Outfit', 'Inter', system-ui, sans-serif;
   line-height: 1.5;
   font-weight: 400;
 
-  color-scheme: dark;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
+
+.dark {
+  --primary: #ffffff;
+  --primary-hover: #f1f5f9;
+  --bg: #030712;
+  --bg-glow: rgba(0, 0, 0, 1);
+  --card-bg: rgba(17, 24, 39, 0.7);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --text: #f8fafc;
+  --text-muted: #94a3b8;
+  --border: rgba(255, 255, 255, 0.1);
+  --input-bg: rgba(0, 0, 0, 0.4);
+  --glass-bg: rgba(255, 255, 255, 0.03);
+  --glass-border: rgba(255, 255, 255, 0.1);
+  --shadow: rgba(0, 0, 0, 0.4);
+  color-scheme: dark;
+}
+
+.light {
+  --primary: #000000;
+  --primary-hover: #1e293b;
+  --bg: #ffffff;
+  --bg-glow: rgba(255, 255, 255, 1);
+  --card-bg: rgba(255, 255, 255, 0.7);
+  --card-border: rgba(0, 0, 0, 0.08);
+  --text: #020617;
+  --text-muted: #475569;
+  --border: rgba(0, 0, 0, 0.08);
+  --input-bg: rgba(0, 0, 0, 0.02);
+  --glass-bg: rgba(0, 0, 0, 0.03);
+  --glass-border: rgba(0, 0, 0, 0.08);
+  --shadow: rgba(0, 0, 0, 0.08);
+  color-scheme: light;
+}
+
+
 
 * {
   box-sizing: border-box;
@@ -18,6 +63,8 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  background-color: var(--bg);
+  color: var(--text);
 }
 
 a {

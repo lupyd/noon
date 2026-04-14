@@ -45,6 +45,29 @@ impl Emailer {
         log::info!("OTP email sent to {}", to_email);
         Ok(())
     }
+
+    pub fn send_form_invitation(
+        &self,
+        to_email: &str,
+        form_name: &str,
+        owner_name: &str,
+        form_link: &str,
+    ) -> Result<()> {
+        let to_address: Mailbox = to_email.parse()?;
+
+        let email = Message::builder()
+            .from(self.from_address.clone())
+            .to(to_address)
+            .subject(format!("Invitation to fill {}", form_name))
+            .body(format!(
+                "Hello,\n\n{} has invited you to fill out the form: {}\n\nYou can access it directly using the following link:\n{}\n\nThank you!",
+                owner_name, form_name, form_link
+            ))?;
+
+        self.transport.send(&email)?;
+        log::info!("Invitation email sent to {}", to_email);
+        Ok(())
+    }
 }
 
 impl Default for Emailer {

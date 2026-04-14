@@ -163,6 +163,7 @@ pub struct Form<'a> {
     pub fields: Vec<mod_Form::Field<'a>>,
     pub allowed_participants: Vec<Cow<'a, str>>,
     pub mentioned_emails: Vec<Cow<'a, str>>,
+    pub deadline: u64,
 }
 
 impl<'a> MessageRead<'a> for Form<'a> {
@@ -179,6 +180,7 @@ impl<'a> MessageRead<'a> for Form<'a> {
                 Ok(66) => msg.fields.push(r.read_message::<mod_Form::Field>(bytes)?),
                 Ok(82) => msg.allowed_participants.push(r.read_string(bytes).map(Cow::Borrowed)?),
                 Ok(98) => msg.mentioned_emails.push(r.read_string(bytes).map(Cow::Borrowed)?),
+                Ok(104) => msg.deadline = r.read_uint64(bytes)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -199,6 +201,7 @@ impl<'a> MessageWrite for Form<'a> {
         + self.fields.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
         + self.allowed_participants.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
         + self.mentioned_emails.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
+        + if self.deadline == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.deadline) as u64) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
@@ -211,6 +214,7 @@ impl<'a> MessageWrite for Form<'a> {
         for s in &self.fields { w.write_with_tag(66, |w| w.write_message(s))?; }
         for s in &self.allowed_participants { w.write_with_tag(82, |w| w.write_string(&**s))?; }
         for s in &self.mentioned_emails { w.write_with_tag(98, |w| w.write_string(&**s))?; }
+        if self.deadline != 0u64 { w.write_with_tag(104, |w| w.write_uint64(*&self.deadline))?; }
         Ok(())
     }
 }

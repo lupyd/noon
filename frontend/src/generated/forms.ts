@@ -119,6 +119,7 @@ export interface Form {
   fields: Form_Field[];
   allowedParticipants: string[];
   mentionedEmails: string[];
+  deadline: number;
 }
 
 export interface Form_Field {
@@ -372,6 +373,7 @@ function createBaseForm(): Form {
     fields: [],
     allowedParticipants: [],
     mentionedEmails: [],
+    deadline: 0,
   };
 }
 
@@ -403,6 +405,9 @@ export const Form: MessageFns<Form> = {
     }
     for (const v of message.mentionedEmails) {
       writer.uint32(98).string(v!);
+    }
+    if (message.deadline !== 0) {
+      writer.uint32(104).uint64(message.deadline);
     }
     return writer;
   },
@@ -486,6 +491,14 @@ export const Form: MessageFns<Form> = {
           message.mentionedEmails.push(reader.string());
           continue;
         }
+        case 13: {
+          if (tag !== 104) {
+            break;
+          }
+
+          message.deadline = longToNumber(reader.uint64());
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -522,6 +535,7 @@ export const Form: MessageFns<Form> = {
         : globalThis.Array.isArray(object?.mentioned_emails)
         ? object.mentioned_emails.map((e: any) => globalThis.String(e))
         : [],
+      deadline: isSet(object.deadline) ? globalThis.Number(object.deadline) : 0,
     };
   },
 
@@ -554,6 +568,9 @@ export const Form: MessageFns<Form> = {
     if (message.mentionedEmails?.length) {
       obj.mentionedEmails = message.mentionedEmails;
     }
+    if (message.deadline !== 0) {
+      obj.deadline = Math.round(message.deadline);
+    }
     return obj;
   },
 
@@ -571,6 +588,7 @@ export const Form: MessageFns<Form> = {
     message.fields = object.fields?.map((e) => Form_Field.fromPartial(e)) || [];
     message.allowedParticipants = object.allowedParticipants?.map((e) => e) || [];
     message.mentionedEmails = object.mentionedEmails?.map((e) => e) || [];
+    message.deadline = object.deadline ?? 0;
     return message;
   },
 };

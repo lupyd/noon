@@ -5,11 +5,9 @@ use deadpool_postgres::{
     Manager,
 };
 
-use crate::auth::AuthZeroTokenVerifier;
 use crate::email::Emailer;
 
 pub struct SharedData {
-    pub auth: AuthZeroTokenVerifier,
     pub db: deadpool_postgres::Pool,
     pub emailer: Option<Emailer>,
     pub skip_email_sending: bool,
@@ -18,19 +16,6 @@ pub struct SharedData {
 impl SharedData {
     pub fn new() -> Self {
         use std::env::var;
-
-        let issuer = var("AUTHZERO_ISSUER").unwrap_or("https://lupyd.com/".to_string());
-        let domain = var("AUTHZERO_DOMAIN").unwrap_or("lupyd.com".to_string());
-        let audience = var("AUTHZERO_AUDIENCE").unwrap_or("https://lupyd.com".to_string());
-
-        log::info!(
-            "using auth0: issuer: {}, domain: {}, audience: {}",
-            issuer,
-            domain,
-            audience
-        );
-
-        let auth = AuthZeroTokenVerifier::new(issuer, domain, audience);
 
         let pool = build_pool();
 
@@ -58,7 +43,6 @@ impl SharedData {
         };
 
         Self {
-            auth,
             db: pool,
             emailer,
             skip_email_sending,

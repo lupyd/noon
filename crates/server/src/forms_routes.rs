@@ -4,6 +4,7 @@ use http_body_util::Full;
 use hyper::{Method, Request, Response, StatusCode, body::Incoming, header};
 use quick_protobuf::MessageRead;
 use std::sync::Arc;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::forms_db;
 use crate::pb::forms::{
@@ -92,10 +93,6 @@ async fn get_authorized_participant(
             }
             return Some(format!("email:{}", email));
         }
-    } else if let Some(_) = auth_str.strip_prefix("Bearer ") {
-        if let Ok(auth_token) = sd.auth.verify_from_headers(headers).await {
-            return Some(format!("user:{}", auth_token.username));
-        }
     }
 
     None
@@ -133,11 +130,36 @@ async fn create_form_route(
         ));
     }
 
-    match forms_db::create_form(&sd.db, form, owner).await {
-        Ok(id) => Ok(build_response(
-            StatusCode::OK,
-            format!("{{\"id\": {}}}", id),
-        )),
+    match forms_db::create_form(&sd.db, form.clone(), owner.clone()).await {
+        Ok(id) => {
+            // Send emails to participants
+            let frontend_url = std::env::var("FRONTEND_URL").unwrap_or("http://localhost:5173".to_string());
+            let owner_display = owner.strip_prefix("email:")
+                .or_else(|| owner.strip_prefix("user:"))
+                .unwrap_or(&owner);
+
+            for email in &form.mentioned_emails {
+                if let Ok(token) = forms_db::generate_email_jwt(&sd.db, email, Some(id)).await {
+                    let form_link = format!("{}/forms/{}?token={}", frontend_url, id, token);
+                    if let Some(emailer) = &sd.emailer {
+                        if let Err(e) = emailer.send_form_invitation(email, &form.name, owner_display, &form_link) {
+                            log::error!("Failed to send invitation email to {}: {}", email, e);
+                        }
+                    } else if sd.skip_email_sending {
+                        println!("--- EMAIL INVITATION ---");
+                        println!("To: {}", email);
+                        println!("Subject: Invitation to fill {}", form.name);
+                        println!("Body: {} has invited you to fill out the form: {}\nDirect Link: {}", owner_display, form.name, form_link);
+                        println!("------------------------");
+                    }
+                }
+            }
+
+            Ok(build_response(
+                StatusCode::OK,
+                format!("{{\"id\": {}}}", id),
+            ))
+        }
         Err(e) => {
             log::error!("create_form db error: {:?}", e);
             Ok(internal_error_response())
@@ -172,7 +194,24 @@ async fn get_form_route(
     }
 
     match forms_db::get_form_bytes(&sd.db, form_id).await {
-        Ok(bytes) => Ok(ok_response(bytes)),
+        Ok(bytes) => {
+            let mut reader = quick_protobuf::BytesReader::from_bytes(&bytes);
+            let parsed_form = Form::from_reader(&mut reader, &bytes).unwrap_or_default();
+            
+            if parsed_form.deadline > 0 {
+                let now = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs();
+                if now > parsed_form.deadline {
+                    return Ok(build_response(
+                        StatusCode::FORBIDDEN,
+                        "This form has expired",
+                    ));
+                }
+            }
+            Ok(ok_response(bytes))
+        },
         Err(e) => {
             log::error!("get_form error: {:?}", e);
             Ok(not_found_response())
@@ -217,7 +256,20 @@ async fn blind_sign_route(
         Err(_) => return Ok(not_found_response()),
     };
     let mut reader = quick_protobuf::BytesReader::from_bytes(&form_bytes);
-    let _parsed_form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
+    let parsed_form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
+
+    if parsed_form.deadline > 0 {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        if now > parsed_form.deadline {
+            return Ok(build_response(
+                StatusCode::FORBIDDEN,
+                "This form has expired",
+            ));
+        }
+    }
 
     let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
         // 5MB

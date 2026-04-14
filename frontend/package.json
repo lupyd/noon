@@ -8,10 +8,11 @@
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview",
+    "test": "playwright test",
+    "test:ui": "playwright test --ui",
     "proto:generate": "mkdir -p src/generated && protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=src/generated --ts_proto_opt=esModuleInterop=true -I ../proto ../proto/forms.proto"
   },
   "dependencies": {
-    "@auth0/auth0-react": "^2.16.0",
     "framer-motion": "^12.38.0",
     "lucide-react": "^1.7.0",
     "preact": "^10.29.1",
@@ -22,7 +23,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.1",
-    "@types/node": "^24.10.1",
+    "@playwright/test": "^1.59.1",
+    "@types/node": "^24.12.2",
     "@types/react": "^19.2.7",
     "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^5.1.1",

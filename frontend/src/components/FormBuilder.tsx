@@ -1,13 +1,13 @@
 import React, { useState } from 'react';
-import { useAuth0 } from '@auth0/auth0-react';
 import { useUnifiedAuth } from '../auth';
-import { Plus, Trash2, Send, CheckCircle, Copy, LogIn, Mail } from 'lucide-react';
+import { Plus, Trash2, Send, CheckCircle, Copy, Mail } from 'lucide-react';
 import {
   encodeForm,
   type FormType,
   FieldType
 } from '../proto';
 import { SunLogo } from './logo';
+import { API_URL } from '../config';
 
 
 interface FormFieldInput {
@@ -33,7 +33,6 @@ const FIELD_TYPES = [
 ];
 
 export const FormBuilder: React.FC = () => {
-  const { loginWithRedirect } = useAuth0();
   const {
     isAuthenticated,
     email: verifiedEmail,
@@ -48,6 +47,7 @@ export const FormBuilder: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [createdFormId, setCreatedFormId] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [deadline, setDeadline] = useState('');
 
   const [mentionedEmails, setMentionedEmails] = useState('');
   const [emailInput, setEmailInput] = useState('');
@@ -100,6 +100,12 @@ export const FormBuilder: React.FC = () => {
       .map((e: string) => e.trim())
       .filter((e: string) => e.length > 0);
 
+    if (mentionedEmailsArray.length === 0) {
+      setError('At least one authorized participant email is required.');
+      setIsSubmitting(false);
+      return;
+    }
+
     const formPayload: FormType = {
       id: 0,
       name,
@@ -114,10 +120,11 @@ export const FormBuilder: React.FC = () => {
         allowedParticipants: [],
       })),
       owner: verifiedEmail || '',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
+      createdAt: Math.floor(Date.now() / 1000),
+      updatedAt: Math.floor(Date.now() / 1000),
       allowedParticipants: [],
       mentionedEmails: mentionedEmailsArray,
+      deadline: deadline ? Math.floor(new Date(deadline).getTime() / 1000) : 0,
     };
 
     try {
@@ -128,7 +135,7 @@ export const FormBuilder: React.FC = () => {
         ...(await getAuthHeaders())
       };
 
-      const response = await fetch('http://localhost:39210/forms/create', {
+      const response = await fetch(`${API_URL}/forms/create`, {
         method: 'POST',
         headers,
         // @ts-expect-error - TS complains about Uint8Array with SharedArrayBuffer
@@ -196,38 +203,36 @@ export const FormBuilder: React.FC = () => {
           <SunLogo height={64} />
           <span>N</span>
         </div>
-        <h2>Secure Creation Environment</h2>
+        <h2>Create New Form</h2>
         <p className="text-muted" style={{ marginBottom: '3rem' }}>
-          Identity verification required to deploy secure forms.
+          Please verify your email to continue.
         </p>
-        <button onClick={() => loginWithRedirect()} className="primary-button large" style={{ width: '100%', maxWidth: '400px' }}>
-          <LogIn size={20} /> Continue with Foundation Account
-        </button>
-        <div style={{ margin: '2.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem', maxWidth: '400px', marginInline: 'auto' }}>
-          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
-          <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>OR</span>
-          <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
-        </div>
 
-        <form onSubmit={(e) => { e.preventDefault(); triggerEmailRequest(); }} style={{ maxWidth: '400px', margin: '0 auto' }}>
-          <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-            <input
-              type="email"
-              value={emailInput}
-              onChange={(e) => setEmailInput(e.target.value)}
-              placeholder="Institutional Email"
-              style={{ textAlign: 'center' }}
-              required
-            />
-          </div>
-          <button type="submit" className="secondary-button" style={{ width: '100%', padding: '1.25rem' }}>
-            <Mail size={18} /> Request Email Access Key
-          </button>
-        </form>
-
-        <div style={{ maxWidth: '400px', margin: '0 auto' }}>
-          {showEmailVerifyInput && (
-            <form onSubmit={(e) => { e.preventDefault(); triggerEmailVerify(); }} className="animate-fade-in" style={{ marginTop: '2rem' }}>
+        <div style={{ maxWidth: '400px', margin: '0 auto', minHeight: '180px', display: 'flex', flexDirection: 'column', justifyContent: 'center' }}>
+          {!showEmailVerifyInput ? (
+            <form onSubmit={(e) => { e.preventDefault(); triggerEmailRequest(); }} className="animate-fade-in">
+              <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+                <input
+                  type="email"
+                  value={emailInput}
+                  onChange={(e) => setEmailInput(e.target.value)}
+                  placeholder="Email Address"
+                  style={{ textAlign: 'center' }}
+                  required
+                />
+              </div>
+              <button type="submit" className="secondary-button" style={{ width: '100%', padding: '1.25rem' }}>
+                <Mail size={18} /> Send Verification Code
+              </button>
+            </form>
+          ) : (
+            <form onSubmit={(e) => { e.preventDefault(); triggerEmailVerify(); }} className="animate-fade-in">
+              <p style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                Enter the 6-digit code sent to<br/>
+                <strong style={{ color: 'var(--text)' }}>{emailInput}</strong>
+                <br/>
+                <span style={{ fontSize: '0.75rem', opacity: 0.8 }}>(Don't forget to check your spam folder)</span>
+              </p>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
                 <input
                   type="text"
@@ -238,8 +243,16 @@ export const FormBuilder: React.FC = () => {
                   required
                 />
               </div>
-              <button type="submit" className="primary-button" style={{ width: '100%' }}>
+              <button type="submit" className="primary-button" style={{ width: '100%', padding: '1.125rem' }}>
                 Verify & Enter
+              </button>
+              <button 
+                type="button" 
+                onClick={() => setShowEmailVerifyInput(false)} 
+                className="text-button" 
+                style={{ marginTop: '1rem', width: '100%', fontSize: '0.875rem' }}
+              >
+                Back to Email
               </button>
             </form>
           )}
@@ -255,6 +268,7 @@ export const FormBuilder: React.FC = () => {
       <div className="form-builder-success card animate-fade-in" style={{ textAlign: 'center', padding: '6rem 2rem' }}>
         <CheckCircle className="success-icon" size={64} style={{ margin: '0 auto 2rem' }} />
         <h2>Form Ready</h2>
+        <p className="success-badge" style={{ color: 'var(--success)', fontWeight: 700, marginBottom: '1rem' }}>Invitations sent to the participants</p>
         <p className="text-muted" style={{ marginBottom: '3rem' }}>Your form is now live and secure.</p>
         <div className="share-link-box" style={{ marginBottom: '3rem' }}>
           <code style={{ fontSize: '1.25rem' }}>{window.location.origin}/forms/{createdFormId}</code>
@@ -278,7 +292,7 @@ export const FormBuilder: React.FC = () => {
     <form onSubmit={(e) => { e.preventDefault(); handleSubmit(); }} className="form-builder animate-fade-in">
       <div className="header-section" style={{ marginBottom: '4rem' }}>
         <h1>Create New Form</h1>
-        <p className="description text-muted">Initialize your secure data collection point.</p>
+        <p className="description text-muted">Set up your anonymous form.</p>
       </div>
 
       <div className="card">
@@ -302,12 +316,12 @@ export const FormBuilder: React.FC = () => {
           />
         </div>
 
-        <div className="card special-card" style={{ padding: '2.5rem' }}>
+        <div className="card special-card" style={{ padding: '2.5rem', marginTop: '1.5rem' }}>
           <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: 0, fontSize: '1.25rem' }}>
             <Mail size={18} /> Participant Whitelist
           </h3>
-          <p className="help-text" style={{ marginBottom: '1.5rem' }}>Only these emails will be allowed to participate anonymously.</p>
-          <div className="form-group" style={{ marginBottom: 0 }}>
+          <p className="help-text" style={{ marginBottom: '1.5rem' }}>Only these emails will be allowed to fill the form. <strong>Invitation emails with direct access links will be sent automatically.</strong></p>
+          <div className="form-group" style={{ marginBottom: '1.5rem' }}>
             <input
               type="text"
               value={mentionedEmails}
@@ -315,6 +329,17 @@ export const FormBuilder: React.FC = () => {
               placeholder="team@company.com, user@example.com"
             />
             <p className="help-text">Comma-separated list of authorized respondents.</p>
+          </div>
+
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Form Deadline (Optional)</label>
+            <input
+              type="datetime-local"
+              value={deadline}
+              onChange={(e) => setDeadline(e.target.value)}
+              style={{ width: '100%' }}
+            />
+            <p className="help-text">Submissions will be disabled after this time.</p>
           </div>
         </div>
       </div>
@@ -369,7 +394,7 @@ export const FormBuilder: React.FC = () => {
         ))}
 
         <button type="button" onClick={addField} className="add-field-button">
-          <Plus size={20} /> Add New Data Point
+          <Plus size={20} /> Add New Field
         </button>
       </div>
 
@@ -381,7 +406,7 @@ export const FormBuilder: React.FC = () => {
           className="primary-button large"
           disabled={isSubmitting}
         >
-          {isSubmitting ? 'Processing...' : <><Send size={18} /> Deploy Form</>}
+          {isSubmitting ? 'Creating...' : <><Send size={18} /> Create Form</>}
         </button>
       </div>
     </form>

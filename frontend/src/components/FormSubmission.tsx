@@ -11,12 +11,13 @@ import {
   type FieldValue
 } from '../proto';
 import { Send, CheckCircle, AlertCircle, Lock, Mail, Shield, ChevronRight, Hash, ArrowLeft } from 'lucide-react';
-import { useAuth0 } from '@auth0/auth0-react';
+import { useUnifiedAuth } from '../auth';
+import { API_URL } from '../config';
 import * as mycrypto from '../crypto';
 
 export const FormSubmission: React.FC = () => {
   const { id } = useParams<{ id: string }>();
-  const { getAccessTokenSilently, isAuthenticated, loginWithRedirect } = useAuth0();
+  const { isAuthenticated, getAuthHeaders } = useUnifiedAuth();
 
   const [form, setForm] = useState<FormType | null>(null);
   const [values, setValues] = useState<Record<string, FieldValue>>({});
@@ -42,16 +43,14 @@ export const FormSubmission: React.FC = () => {
 
       if (token) {
         headers['Authorization'] = `EmailOnly ${token}`;
-      } else if (isAuthenticated) {
-        try {
-          const authToken = await getAccessTokenSilently();
-          headers['Authorization'] = `Bearer ${authToken}`;
-        } catch (e) {
-          console.error("Failed to get token silently", e);
+      } else {
+        const globalHeaders = await getAuthHeaders();
+        if (globalHeaders['Authorization']) {
+          headers['Authorization'] = globalHeaders['Authorization'];
         }
       }
 
-      const response = await fetch(`http://localhost:39210/forms/${id}`, {
+      const response = await fetch(`${API_URL}/forms/${id}`, {
         headers
       });
 
@@ -90,6 +89,17 @@ export const FormSubmission: React.FC = () => {
   };
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get('token');
+    if (urlToken) {
+      setToken(urlToken);
+      localStorage.setItem(`noon_token_${id}`, urlToken);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, [id]);
+
+  useEffect(() => {
     fetchForm();
   }, [id, isAuthenticated, token]);
 
@@ -105,7 +115,7 @@ export const FormSubmission: React.FC = () => {
     setIsVerifying(true);
     try {
       const encoded = encodeOtpRequest({ email: userEmail, formId: parseInt(id!) });
-      const response = await fetch(`http://localhost:39210/email/request_otp`, {
+      const response = await fetch(`${API_URL}/email/request_otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         // @ts-ignore
@@ -128,7 +138,7 @@ export const FormSubmission: React.FC = () => {
     setIsVerifying(true);
     try {
       const encoded = encodeOtpVerify({ email: userEmail, code: otpCode, formId: parseInt(id!) });
-      const response = await fetch(`http://localhost:39210/email/verify_otp`, {
+      const response = await fetch(`${API_URL}/email/verify_otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         // @ts-ignore
@@ -162,7 +172,7 @@ export const FormSubmission: React.FC = () => {
     try {
       const encoded = encodeFormSubmission(submissionPayload);
 
-      const pkRes = await fetch(`http://localhost:39210/forms/${id}/public_key`);
+      const pkRes = await fetch(`${API_URL}/forms/${id}/public_key`);
       if (!pkRes.ok) throw new Error("Failed to fetch public key");
       const { n: pubNBase64, e: pubEBase64 } = await pkRes.json();
 
@@ -183,10 +193,10 @@ export const FormSubmission: React.FC = () => {
       const m_blinded = (mBig * r_e) % publicN;
       const blindedPayload = mycrypto.bigIntToBytesLE(m_blinded);
 
-      const signRes = await fetch(`http://localhost:39210/forms/${id}/blind_sign`, {
+      const signRes = await fetch(`${API_URL}/forms/${id}/blind_sign`, {
         method: 'POST',
         headers: {
-          'Authorization': isAuthenticated ? `Bearer ${await getAccessTokenSilently()}` : `EmailOnly ${token}`,
+          'Authorization': token ? `EmailOnly ${token}` : (await getAuthHeaders())['Authorization'] || '',
           'Content-Type': 'application/octet-stream',
         },
         // @ts-ignore
@@ -208,7 +218,7 @@ export const FormSubmission: React.FC = () => {
         submission: encoded,
       };
 
-      const submitRes = await fetch(`http://localhost:39210/forms/${id}/submit`, {
+      const submitRes = await fetch(`${API_URL}/forms/${id}/submit`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         body: new Uint8Array(encodeBlindSubmission(blindSubmission))
@@ -226,7 +236,7 @@ export const FormSubmission: React.FC = () => {
 
   if (loading) return (
     <div className="loading-state animate-fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
-      <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+      <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid var(--border)', borderTopColor: 'var(--accent)', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
       <p style={{ marginTop: '1.5rem', color: 'var(--text-muted)' }}>Decrypting secure workspace...</p>
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
@@ -250,7 +260,7 @@ export const FormSubmission: React.FC = () => {
       <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
         <div className="shield-blob" style={{ margin: '0 auto 2rem', position: 'relative', width: '64px', height: '64px' }}>
           <div style={{ position: 'absolute', inset: 0, background: 'var(--accent)', filter: 'blur(20px)', opacity: 0.4, borderRadius: '50%' }}></div>
-          <Shield size={64} style={{ position: 'relative', color: 'white' }} />
+          <Shield size={64} style={{ position: 'relative', color: 'var(--text)' }} />
         </div>
         <h2 style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: '0.5rem' }}>Secure Access</h2>
         <p className="text-muted">Verification required to view this protected form.</p>
@@ -281,19 +291,6 @@ export const FormSubmission: React.FC = () => {
             >
               {isVerifying ? 'Generating OTP...' : <><Send size={20} /> Request Access Key</>}
             </button>
-            <div style={{ margin: '2.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
-              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>OR</span>
-              <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
-            </div>
-            <button
-              type="button"
-              onClick={() => loginWithRedirect({ appState: { returnTo: window.location.pathname } })}
-              className="secondary-button"
-              style={{ width: '100%', padding: '1.25rem' }}
-            >
-              Log In with Foundation Account
-            </button>
           </form>
         ) : (
           <form onSubmit={(e) => { e.preventDefault(); verifyOtp(); }} className="animate-fade-in">
@@ -314,7 +311,7 @@ export const FormSubmission: React.FC = () => {
                   required
                 />
               </div>
-              <p className="help-text" style={{ marginTop: '1rem' }}>Enter the 6-digit code sent to {userEmail}</p>
+              <p className="help-text" style={{ marginTop: '1rem' }}>Enter the 6-digit code sent to {userEmail}. <br/><strong>Check your spam folder if it doesn't arrive.</strong></p>
             </div>
             <button
               type="submit"
@@ -339,14 +336,23 @@ export const FormSubmission: React.FC = () => {
           <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.2)' }}><Lock size={12} /> Anonymous</span>
           <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)' }}><Shield size={12} /> Verified Session</span>
         </div>
-        <h1 style={{ fontSize: '4.5rem', fontWeight: 900, marginBottom: '1.5rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
-        <p className="description text-muted" style={{ fontSize: '1.25rem', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>{form?.description}</p>
+        <h1 style={{ fontSize: '4.5rem', fontWeight: 900, marginBottom: '0.5rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
+        <p className="owner-mention" style={{ fontSize: '1rem', color: 'var(--accent)', marginBottom: '1.5rem', fontWeight: 600 }}>By {form?.owner?.replace('email:', '').replace('user:', '')}</p>
+        <p className="description text-muted" style={{ fontSize: '1.25rem', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>{form?.description ?? ''}</p>
+
+        {form?.deadline && form.deadline > 0 && (
+          <div style={{ marginTop: '2rem' }}>
+            <span className="badge" style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)', color: 'var(--error)' }}>
+              Deadline: {new Date(Number(form.deadline) * 1000).toLocaleString()}
+            </span>
+          </div>
+        )}
       </div>
 
       <form onSubmit={handleSubmit} className="submission-fields" style={{ maxWidth: '800px', margin: '0 auto' }}>
         {form?.fields.map((field, index: number) => (
           <div key={field.name} className="form-group card animate-fade-in" style={{ padding: '2.5rem' }}>
-            <label style={{ fontSize: '0.875rem', marginBottom: '1.5rem', fontWeight: 800, color: 'white', display: 'flex', justifyContent: 'space-between' }}>
+            <label style={{ fontSize: '0.875rem', marginBottom: '1.5rem', fontWeight: 800, color: 'var(--text)', display: 'flex', justifyContent: 'space-between' }}>
               <span>{field.label} {field.required && <span style={{ color: 'var(--error)' }}>*</span>}</span>
               <span style={{ opacity: 0.3, fontWeight: 400 }}>0{index + 1}</span>
             </label>
@@ -376,7 +382,7 @@ export const FormSubmission: React.FC = () => {
                     onChange={(e) => handleInputChange(field.name, e.target.checked, 'boolValue')}
                     style={{ width: '1.5rem', height: '1.5rem', cursor: 'pointer' }}
                   />
-                  <label htmlFor={`check-${field.name}`} style={{ margin: 0, textTransform: 'none', letterSpacing: 0, fontWeight: 400, cursor: 'pointer' }}>
+                  <label htmlFor={`check-${field.name}`} style={{ margin: 0, textTransform: 'none', letterSpacing: 0, fontWeight: 400, cursor: 'pointer', color: 'var(--text)' }}>
                     I acknowledge and confirm this data point.
                   </label>
                 </div>

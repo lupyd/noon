@@ -15,7 +15,8 @@ CREATE TABLE IF NOT EXISTS forms (
     created_at TIMESTAMPTZ DEFAULT NOW(),
     owner VARCHAR NOT NULL,
     fields BYTEA NOT NULL,
-    mentioned_emails TEXT[] DEFAULT '{}'
+    mentioned_emails TEXT[] DEFAULT '{}',
+    deadline TIMESTAMPTZ
 );
 
 CREATE INDEX IF NOT EXISTS idx_forms_owner ON forms(owner);

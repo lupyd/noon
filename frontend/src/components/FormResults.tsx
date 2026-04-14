@@ -7,6 +7,7 @@ import {
 } from '../proto';
 import { useUnifiedAuth } from '../auth';
 import { Table as TableIcon, Download, ArrowLeft, Loader2, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
+import { API_URL } from '../config';
 
 export const FormResults: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -37,7 +38,7 @@ export const FormResults: React.FC = () => {
       const headers = await getAuthHeaders();
 
       // Fetch Results (includes form definition and total count)
-      const resultsRes = await fetch(`http://localhost:39210/forms/${id}/results?limit=${limit}&offset=${offset}`, { headers });
+      const resultsRes = await fetch(`${API_URL}/forms/${id}/results?limit=${limit}&offset=${offset}`, { headers });
       
       if (resultsRes.status === 401) {
           clearEmailAuth();
@@ -106,7 +107,14 @@ export const FormResults: React.FC = () => {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <div>
             <h1 style={{ fontSize: '4rem', fontWeight: 900, marginBottom: '1rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
-            <p className="text-muted" style={{ fontSize: '1.25rem' }}>{Number(results?.totalSubmissions) || 0} secure submissions received</p>
+            <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
+              <p className="text-muted" style={{ fontSize: '1.25rem' }}>{Number(results?.totalSubmissions) || 0} secure submissions received</p>
+              {form?.deadline && form.deadline > 0 && (
+                <span className="badge" style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)', color: 'var(--error)', fontSize: '0.875rem' }}>
+                  Deadline: {new Date(Number(form.deadline) * 1000).toLocaleString()}
+                </span>
+              )}
+            </div>
           </div>
           <button className="secondary-button" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <Download size={18} /> Export Data
@@ -163,7 +171,7 @@ export const FormResults: React.FC = () => {
           >
             <ChevronLeft size={18} /> Previous
           </button>
-          <span style={{ fontWeight: 700, color: 'white' }}>
+          <span style={{ fontWeight: 700, color: 'var(--text)' }}>
             Page <span style={{ color: 'var(--accent)' }}>{page}</span> of {totalPages}
           </span>
           <button 

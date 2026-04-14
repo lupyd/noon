@@ -5,6 +5,7 @@ import {
   decodeUserForms, 
   type FormType 
 } from '../proto';
+import { API_URL } from '../config';
 import { 
   LayoutDashboard, 
   FileText, 
@@ -39,7 +40,7 @@ export const Dashboard: React.FC = () => {
     try {
       const headers = await getAuthHeaders();
 
-      const res = await fetch('http://localhost:39210/forms', { headers });
+      const res = await fetch(`${API_URL}/forms`, { headers });
       
       if (res.status === 401) {
           clearEmailAuth();

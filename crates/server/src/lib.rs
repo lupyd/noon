@@ -5,7 +5,6 @@ use http_body_util::{BodyExt, Full, Limited};
 pub use hyper::{Request, Response, StatusCode, body::Incoming, header, service::service_fn};
 use hyper_util::rt::TokioIo;
 
-pub mod auth;
 pub mod email;
 pub mod forms_db;
 pub mod forms_routes;

@@ -12,7 +12,7 @@ Noon is a privacy-preserving form submission system that enables anonymous respo
 
 - **Blind Signature Cryptography**: RSA-based blind signing allows anonymous form submissions with cryptographic proof of authenticity
 - **Multiple Field Types**: TEXT, TEXTAREA, NUMBER, SELECT, MULTI_SELECT, RADIO, CHECKBOX, DATE, TIME, EMAIL, URL
-- **Dual Submission Modes**: Standard authenticated or anonymous blind signature submissions
+- **Dual Submission Modes**: Authenticated with email or anonymous blind signature submissions
 - **Access Control**: Form creators can restrict submissions to allowed participants
 
 ## Architecture
@@ -33,7 +33,7 @@ noon/
 | Server | Hyper + Tokio |
 | Frontend | React 19 + TypeScript + Vite |
 | Database | PostgreSQL |
-| Auth | Auth0 JWT |
+| Auth | Email OTP Verification |
 | Serialization | Protocol Buffers |
 
 ## Quick Start
@@ -69,9 +69,9 @@ npm run dev
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `DB_CONN_STR` | Yes | - | PostgreSQL connection string |
-| `AUTHZERO_ISSUER` | No | `https://lupyd.com/` | Auth0 issuer URL |
-| `AUTHZERO_DOMAIN` | No | `lupyd.com` | Auth0 domain |
-| `AUTHZERO_AUDIENCE` | No | `https://lupyd.com` | Auth0 audience |
+| `SMTP_HOST` | No | - | SMTP server for OTP emails |
+| `SMTP_USER` | No | - | SMTP username |
+| `SMTP_PASS` | No | - | SMTP password |
 | `PORT` | No | `39210` | Server port |
 | `EMULATOR_MODE` | No | `false` | Enable emulator features |
 | `NO_TOKEN_VERIFICATION` | No | `false` | Skip JWT verification (dev only) |
