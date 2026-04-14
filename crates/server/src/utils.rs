@@ -2,12 +2,8 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 lazy_static::lazy_static! {
     pub static ref HTTP_CLIENT: reqwest::Client = reqwest::Client::new();
+    pub static ref EMULATOR_MODE: bool = std::env::var("EMULATOR_MODE").map(|s| s == "true").unwrap_or(false);
 }
-
-#[cfg(emulator_mode = "true")]
-pub const EMULATOR_MODE: bool = true;
-#[cfg(not(emulator_mode = "true"))]
-pub const EMULATOR_MODE: bool = false;
 
 const BEARER_WORD: &str = "Bearer ";
 

@@ -14,11 +14,8 @@ CREATE TABLE IF NOT EXISTS forms (
     description TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     owner VARCHAR NOT NULL,
-    fields JSONB NOT NULL,
-    is_anonymous BOOLEAN NOT NULL DEFAULT FALSE,
-    mentioned_emails TEXT[] DEFAULT '{}',
-    requires_otp_verification BOOLEAN NOT NULL DEFAULT FALSE,
-    use_email_only BOOLEAN NOT NULL DEFAULT FALSE
+    fields BYTEA NOT NULL,
+    mentioned_emails TEXT[] DEFAULT '{}'
 );
 
 CREATE INDEX IF NOT EXISTS idx_forms_owner ON forms(owner);
@@ -34,9 +31,8 @@ CREATE TABLE IF NOT EXISTS form_allowed_participants (
 
 CREATE TABLE IF NOT EXISTS form_submissions (
     form_id BIGINT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
-    data JSONB NOT NULL,
-    created_at TIMESTAMPTZ DEFAULT NOW(),
-    username VARCHAR
+    data BYTEA NOT NULL,
+    created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
 CREATE TABLE IF NOT EXISTS otp_codes (
@@ -59,3 +55,11 @@ CREATE TABLE IF NOT EXISTS email_users (
 
 CREATE INDEX IF NOT EXISTS idx_otp_codes_form_email ON otp_codes(form_id, email);
 CREATE INDEX IF NOT EXISTS idx_otp_codes_expires ON otp_codes(expires_at) WHERE used = FALSE;
+ 
+ 
+ CREATE TABLE IF NOT EXISTS secrets (
+     id SERIAL PRIMARY KEY,
+     key_data BYTEA NOT NULL,
+     created_at TIMESTAMPTZ DEFAULT NOW(),
+     expires_at TIMESTAMPTZ
+ );

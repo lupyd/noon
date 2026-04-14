@@ -34,10 +34,7 @@ message Form {
     string owner = 7;
     repeated Field fields = 8;
     repeated string allowed_participants = 10;
-    bool is_anonymous = 11;
     repeated string mentioned_emails = 12;
-    bool requires_otp_verification = 13;
-    bool use_email_only = 14;
   
     message Field {
         FieldType type = 1;
@@ -65,7 +62,6 @@ message FormSubmission {
     uint64 form_id = 1;
     map<string, FieldValue> values = 2;
     uint64 submitted_at = 3;
-    string username = 4;
 }
 
 message FieldValue {

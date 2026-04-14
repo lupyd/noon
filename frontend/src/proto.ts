@@ -1,50 +1,54 @@
-import protobuf from 'protobufjs';
-import formsProto from './forms.proto?raw';
+import { 
+  Form, 
+  FormSubmission, 
+  OtpRequest, 
+  OtpVerify, 
+  EmailVerificationRequest, 
+  EmailVerificationVerify,
+  FieldType,
+  FieldValue
+} from './generated/forms';
 
-const root = protobuf.parse(formsProto).root;
+export type { 
+  Form as FormType, 
+  FormSubmission as FormSubmissionType, 
+  OtpRequest as OtpRequestType, 
+  OtpVerify as OtpVerifyType, 
+  EmailVerificationRequest as EmailVerificationRequestType, 
+  EmailVerificationVerify as EmailVerificationVerifyType,
+  FieldValue
+};
 
-export const Form = root.lookupType('Form');
-export const FormSubmission = root.lookupType('FormSubmission');
-export const FieldType = root.lookupEnum('FieldType').values;
-export const OtpRequest = root.lookupType('OtpRequest');
-export const OtpVerify = root.lookupType('OtpVerify');
-export const EmailVerificationRequest = root.lookupType('EmailVerificationRequest');
-export const EmailVerificationVerify = root.lookupType('EmailVerificationVerify');
+export { FieldType };
 
-export function encodeForm(payload: any): Uint8Array {
-  const message = Form.create(payload);
-  return Form.encode(message).finish();
+export function encodeForm(payload: Form): Uint8Array {
+  return Form.encode(payload).finish();
 }
 
-export function decodeForm(buffer: Uint8Array): any {
+export function decodeForm(buffer: Uint8Array): Form {
   return Form.decode(buffer);
 }
 
-export function encodeFormSubmission(payload: any): Uint8Array {
-  const message = FormSubmission.create(payload);
-  return FormSubmission.encode(message).finish();
+export function encodeFormSubmission(payload: FormSubmission): Uint8Array {
+  return FormSubmission.encode(payload).finish();
 }
 
-export function decodeFormSubmission(buffer: Uint8Array): any {
+export function decodeFormSubmission(buffer: Uint8Array): FormSubmission {
   return FormSubmission.decode(buffer);
 }
 
-export function encodeOtpRequest(payload: any): Uint8Array {
-  const message = OtpRequest.create(payload);
-  return OtpRequest.encode(message).finish();
+export function encodeOtpRequest(payload: OtpRequest): Uint8Array {
+  return OtpRequest.encode(payload).finish();
 }
 
-export function encodeOtpVerify(payload: any): Uint8Array {
-  const message = OtpVerify.create(payload);
-  return OtpVerify.encode(message).finish();
+export function encodeOtpVerify(payload: OtpVerify): Uint8Array {
+  return OtpVerify.encode(payload).finish();
 }
 
-export function encodeEmailVerificationRequest(payload: any): Uint8Array {
-  const message = EmailVerificationRequest.create(payload);
-  return EmailVerificationRequest.encode(message).finish();
+export function encodeEmailVerificationRequest(payload: EmailVerificationRequest): Uint8Array {
+  return EmailVerificationRequest.encode(payload).finish();
 }
 
-export function encodeEmailVerificationVerify(payload: any): Uint8Array {
-  const message = EmailVerificationVerify.create(payload);
-  return EmailVerificationVerify.encode(message).finish();
+export function encodeEmailVerificationVerify(payload: EmailVerificationVerify): Uint8Array {
+  return EmailVerificationVerify.encode(payload).finish();
 }

@@ -162,10 +162,7 @@ pub struct Form<'a> {
     pub owner: Cow<'a, str>,
     pub fields: Vec<mod_Form::Field<'a>>,
     pub allowed_participants: Vec<Cow<'a, str>>,
-    pub is_anonymous: bool,
     pub mentioned_emails: Vec<Cow<'a, str>>,
-    pub requires_otp_verification: bool,
-    pub use_email_only: bool,
 }
 
 impl<'a> MessageRead<'a> for Form<'a> {
@@ -181,10 +178,7 @@ impl<'a> MessageRead<'a> for Form<'a> {
                 Ok(58) => msg.owner = r.read_string(bytes).map(Cow::Borrowed)?,
                 Ok(66) => msg.fields.push(r.read_message::<mod_Form::Field>(bytes)?),
                 Ok(82) => msg.allowed_participants.push(r.read_string(bytes).map(Cow::Borrowed)?),
-                Ok(88) => msg.is_anonymous = r.read_bool(bytes)?,
                 Ok(98) => msg.mentioned_emails.push(r.read_string(bytes).map(Cow::Borrowed)?),
-                Ok(104) => msg.requires_otp_verification = r.read_bool(bytes)?,
-                Ok(112) => msg.use_email_only = r.read_bool(bytes)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -204,10 +198,7 @@ impl<'a> MessageWrite for Form<'a> {
         + if self.owner == "" { 0 } else { 1 + sizeof_len((&self.owner).len()) }
         + self.fields.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
         + self.allowed_participants.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
-        + if self.is_anonymous == false { 0 } else { 1 + sizeof_varint(*(&self.is_anonymous) as u64) }
         + self.mentioned_emails.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
-        + if self.requires_otp_verification == false { 0 } else { 1 + sizeof_varint(*(&self.requires_otp_verification) as u64) }
-        + if self.use_email_only == false { 0 } else { 1 + sizeof_varint(*(&self.use_email_only) as u64) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
@@ -219,10 +210,7 @@ impl<'a> MessageWrite for Form<'a> {
         if self.owner != "" { w.write_with_tag(58, |w| w.write_string(&**&self.owner))?; }
         for s in &self.fields { w.write_with_tag(66, |w| w.write_message(s))?; }
         for s in &self.allowed_participants { w.write_with_tag(82, |w| w.write_string(&**s))?; }
-        if self.is_anonymous != false { w.write_with_tag(88, |w| w.write_bool(*&self.is_anonymous))?; }
         for s in &self.mentioned_emails { w.write_with_tag(98, |w| w.write_string(&**s))?; }
-        if self.requires_otp_verification != false { w.write_with_tag(104, |w| w.write_bool(*&self.requires_otp_verification))?; }
-        if self.use_email_only != false { w.write_with_tag(112, |w| w.write_bool(*&self.use_email_only))?; }
         Ok(())
     }
 }
@@ -369,7 +357,6 @@ pub struct FormSubmission<'a> {
     pub form_id: u64,
     pub values: KVMap<Cow<'a, str>, FieldValue<'a>>,
     pub submitted_at: u64,
-    pub username: Cow<'a, str>,
 }
 
 impl<'a> MessageRead<'a> for FormSubmission<'a> {
@@ -383,7 +370,6 @@ impl<'a> MessageRead<'a> for FormSubmission<'a> {
                     msg.values.insert(key, value);
                 }
                 Ok(24) => msg.submitted_at = r.read_uint64(bytes)?,
-                Ok(34) => msg.username = r.read_string(bytes).map(Cow::Borrowed)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -398,14 +384,12 @@ impl<'a> MessageWrite for FormSubmission<'a> {
         + if self.form_id == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.form_id) as u64) }
         + self.values.iter().map(|(k, v)| 1 + sizeof_len(2 + sizeof_len((k).len()) + sizeof_len((v).get_size()))).sum::<usize>()
         + if self.submitted_at == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.submitted_at) as u64) }
-        + if self.username == "" { 0 } else { 1 + sizeof_len((&self.username).len()) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
         if self.form_id != 0u64 { w.write_with_tag(8, |w| w.write_uint64(*&self.form_id))?; }
         for (k, v) in self.values.iter() { w.write_with_tag(18, |w| w.write_map(2 + sizeof_len((k).len()) + sizeof_len((v).get_size()), 10, |w| w.write_string(&**k), 18, |w| w.write_message(v)))?; }
         if self.submitted_at != 0u64 { w.write_with_tag(24, |w| w.write_uint64(*&self.submitted_at))?; }
-        if self.username != "" { w.write_with_tag(34, |w| w.write_string(&**&self.username))?; }
         Ok(())
     }
 }

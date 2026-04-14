@@ -21,14 +21,14 @@ export function gcd(a: bigint, b: bigint): bigint {
 }
 
 export function modInverse(a: bigint, m: bigint): bigint {
-  let m0 = m;
+  const m0 = m;
   let y = 0n;
   let x = 1n;
 
   if (m === 1n) return 0n;
 
   while (a > 1n) {
-    let q = a / m;
+    const q = a / m;
     let t = m;
 
     m = a % m;

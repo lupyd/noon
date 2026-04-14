@@ -1,4 +1,6 @@
-import { BrowserRouter as Router, Routes, Route, Link } from 'react-router-dom';
+import { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
+
 import { useAuth0 } from '@auth0/auth0-react';
 import { FormBuilder } from './components/FormBuilder';
 import { FormSubmission } from './components/FormSubmission';
@@ -7,18 +9,57 @@ import { SunLogo } from './components/logo';
 import './App.css';
 
 function Home() {
+  const [targetId, setTargetId] = useState('');
+  const navigate = useNavigate();
+
+  const handleJoin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (targetId.trim()) {
+      let id = targetId.trim();
+      // Handle full URLs if pasted
+      if (id.includes('/forms/')) {
+        id = id.split('/forms/').pop()?.split('?')[0] || '';
+      }
+      if (id) {
+        navigate(`/forms/${id}`);
+      }
+    }
+  };
+
   return (
-    <div className="home card animate-fade-in">
+    <div className="home animate-fade-in">
       <div className="hero">
         <div className="noon-logo noon-logo-hero">
           <span>N</span>
-          <SunLogo height={128} />
+          <SunLogo height={160} />
           <span>N</span>
         </div>
-        <h1>Welcome to Noon Forms</h1>
-        <p>Create beautiful, secure, and anonymous forms in seconds.</p>
-        <div className="home-actions">
-          <Link to="/create" className="primary-button large">Create New Form</Link>
+        <h1>DECENTRALIZED<br/>SECURE FORMS</h1>
+        <p>The next generation of private data collection. Beautiful, anonymous, and cryptographically secure.</p>
+        
+        <div className="home-search-container">
+          <form onSubmit={handleJoin} className="search-form">
+            <input 
+              type="text" 
+              placeholder="Paste form URL or ID here..." 
+              value={targetId}
+              onChange={(e) => setTargetId(e.target.value)}
+              className="search-input"
+            />
+            <button type="submit" className="primary-button join-button">
+              Fill Form
+            </button>
+          </form>
+          
+          <div className="search-divider">
+            <span>OR</span>
+          </div>
+
+          <div className="home-actions">
+            <Link to="/create" className="secondary-button large">
+              Create New Form
+            </Link>
+          </div>
         </div>
       </div>
     </div>
@@ -40,16 +81,16 @@ function App() {
                 <span>N</span>
               </div>
             </Link>
-            <nav style={{ display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-              <Link to="/create" style={{ marginLeft: 0 }}>Build</Link>
-              <a href="http://localhost:39210/health" target="_blank" rel="noreferrer" style={{ marginLeft: 0 }}>Status</a>
+            <nav className="navbar-nav">
+              <Link to="/create">Build</Link>
+              <a href="http://localhost:39210/health" target="_blank" rel="noreferrer">Status</a>
               
-              <div className="auth-section" style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginLeft: '1rem', borderLeft: '1px solid var(--border)', paddingLeft: '1.5rem' }}>
+              <div className="auth-section">
                 {isLoading ? (
-                  <span style={{ color: 'var(--text-muted)' }}>Loading...</span>
+                  <span className="text-muted">Loading...</span>
                 ) : isAuthenticated ? (
                   <>
-                    <span style={{ fontSize: '0.875rem', color: 'var(--text-muted)' }}>Hi, {user?.given_name || user?.name?.split('@')[0]}</span>
+                    <span className="user-greeting">Hi, {user?.given_name || user?.name?.split('@')[0]}</span>
                     <button 
                       onClick={() => logout({ logoutParams: { returnTo: window.location.origin } })} 
                       className="icon-button" 
@@ -61,8 +102,7 @@ function App() {
                 ) : (
                   <button 
                     onClick={() => loginWithRedirect()} 
-                    className="primary-button" 
-                    style={{ padding: '0.5rem 1rem', fontSize: '0.875rem' }}
+                    className="primary-button nav-button"
                   >
                     <LogIn size={16} /> Log In
                   </button>
@@ -75,9 +115,11 @@ function App() {
         <main className="container main-content">
           <Routes>
             <Route path="/" element={<Home />} />
+            <Route path="/index.html" element={<Navigate to="/" replace />} />
             <Route path="/create" element={<FormBuilder />} />
             <Route path="/forms/:id" element={<FormSubmission />} />
           </Routes>
+
         </main>
 
         <footer className="footer">

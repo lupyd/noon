@@ -11,7 +11,7 @@ use tokio::sync::RwLock;
 
 use crate::{
     lupyd_token::LupydTokenPermissions,
-    utils::{EMULATOR_MODE, HTTP_CLIENT, get_current_timestamp_in_secs},
+    utils::{HTTP_CLIENT, get_current_timestamp_in_secs},
 };
 
 #[derive(Deserialize, Serialize)]
@@ -203,7 +203,7 @@ impl AuthZeroTokenVerifier {
     }
 
     pub async fn verify(&self, token: &str) -> Result<AuthenticatedToken, TokenVerificationError> {
-        if EMULATOR_MODE {
+        if *crate::utils::EMULATOR_MODE {
             if std::env::var("NO_TOKEN_VERIFICATION").unwrap_or_default() == "true" {
                 log::warn!("NO_TOKEN_VERIFICATION is set to true, skipping token verification");
                 return Ok(AuthenticatedToken {

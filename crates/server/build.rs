@@ -9,11 +9,11 @@ fn main() {
     println!("cargo:rustc-cfg=emulator_mode=\"{}\"", em_mode);
 
     let out_dir = PathBuf::from("src/pb");
-    let proto_dir = PathBuf::from("protobufs");
+    let proto_dir = PathBuf::from("../../proto");
     let protos = vec![proto_dir.join("forms.proto")];
 
     let config_builder = ConfigBuilder::new(&protos, None, Some(&out_dir), &[proto_dir]).unwrap();
     FileDescriptor::run(&config_builder.build()).unwrap();
 
-    println!("cargo:rerun-if-changed=protobufs/forms.proto");
+    println!("cargo:rerun-if-changed=../../proto/forms.proto");
 }

@@ -1,134 +1,149 @@
 import React, { useState, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
-import { decodeForm, encodeFormSubmission, encodeOtpRequest, encodeOtpVerify, encodeEmailVerificationRequest, encodeEmailVerificationVerify } from '../proto';
-import { Send, CheckCircle, AlertCircle, Lock, Mail, Shield } from 'lucide-react';
+import { 
+  decodeForm, 
+  encodeFormSubmission, 
+  encodeOtpRequest, 
+  encodeOtpVerify, 
+  type FormType, 
+  FieldType, 
+  type FieldValue 
+} from '../proto';
+import { Send, CheckCircle, AlertCircle, Lock, Mail, Shield, ChevronRight, Hash, ArrowLeft } from 'lucide-react';
 import { useAuth0 } from '@auth0/auth0-react';
 import * as mycrypto from '../crypto';
 
 export const FormSubmission: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const { getAccessTokenSilently, isAuthenticated, loginWithRedirect } = useAuth0();
-  const [form, setForm] = useState<any>(null);
-  const [values, setValues] = useState<Record<string, any>>({});
+  
+  const [form, setForm] = useState<FormType | null>(null);
+  const [values, setValues] = useState<Record<string, FieldValue>>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   
   const [userEmail, setUserEmail] = useState('');
-  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
-  const [emailVerifyCode, setEmailVerifyCode] = useState('');
-  const [showEmailVerify, setShowEmailVerify] = useState(false);
   const [otpCode, setOtpCode] = useState('');
   const [showOtpInput, setShowOtpInput] = useState(false);
-  const [otpVerified, setOtpVerified] = useState(false);
+  const [needsAuth, setNeedsAuth] = useState(false);
+  const [isVerifying, setIsVerifying] = useState(false);
+  
+  // Per-form tokens stored in localStorage
+  const [token, setToken] = useState<string | null>(localStorage.getItem(`noon_token_${id}`));
+
+  const fetchForm = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const headers: Record<string, string> = {};
+      
+      if (token) {
+        headers['Authorization'] = `EmailOnly ${token}`;
+      } else if (isAuthenticated) {
+        try {
+          const authToken = await getAccessTokenSilently();
+          headers['Authorization'] = `Bearer ${authToken}`;
+        } catch (e) {
+          console.error("Failed to get token silently", e);
+        }
+      }
+
+      const response = await fetch(`http://localhost:39210/forms/${id}`, {
+        headers
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        setNeedsAuth(true);
+        setLoading(false);
+        return;
+      }
+
+      if (!response.ok) {
+        throw new Error('Form not found or inaccessible');
+      }
+
+      const buffer = await response.arrayBuffer();
+      const decoded = decodeForm(new Uint8Array(buffer));
+      setForm(decoded);
+      setNeedsAuth(false);
+      
+      // Initialize values
+      const initialValues: Record<string, FieldValue> = {};
+      decoded.fields.forEach((field) => {
+        if (field.type === FieldType.CHECKBOX) {
+          initialValues[field.name] = { boolValue: false };
+        } else if (field.type === FieldType.NUMBER) {
+          initialValues[field.name] = { doubleValue: 0 };
+        } else {
+          initialValues[field.name] = { stringValue: '' };
+        }
+      });
+      setValues(initialValues);
+    } catch (err) {
+      setError((err as Error).message);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    const fetchForm = async () => {
-      try {
-        const response = await fetch(`http://localhost:39210/forms/${id}`);
-        if (!response.ok) {
-          throw new Error('Form not found or failed to load');
-        }
-        const buffer = await response.arrayBuffer();
-        const decoded = decodeForm(new Uint8Array(buffer));
-        setForm(decoded);
-        
-        // Initialize values
-        const initialValues: Record<string, any> = {};
-        decoded.fields.forEach((field: any) => {
-          if (field.type === 6) { // CHECKBOX
-            initialValues[field.name] = { boolValue: false };
-          } else if (field.type === 2) { // NUMBER
-            initialValues[field.name] = { doubleValue: 0 };
-          } else {
-            initialValues[field.name] = { stringValue: '' };
-          }
-        });
-        setValues(initialValues);
-      } catch (err) {
-        setError((err as Error).message);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchForm();
-  }, [id]);
+  }, [id, isAuthenticated, token]);
 
-  const handleInputChange = (fieldName: string, value: any, type: string) => {
+  const handleInputChange = (fieldName: string, value: string | number | boolean, type: keyof FieldValue) => {
     setValues(prev => ({
       ...prev,
       [fieldName]: { [type]: value }
     }));
   };
 
-  const requestEmailVerification = async () => {
-    if (!userEmail) return;
-    try {
-      const encoded = encodeEmailVerificationRequest({ email: userEmail });
-      const response = await fetch('http://localhost:39210/email/request_verification', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        // @ts-ignore
-        body: encoded,
-      });
-      if (!response.ok) throw new Error('Failed to send verification email');
-      setShowEmailVerify(true);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-
-  const verifyEmail = async () => {
-    if (!userEmail || !emailVerifyCode) return;
-    try {
-      const encoded = encodeEmailVerificationVerify({ email: userEmail, code: emailVerifyCode });
-      const response = await fetch('http://localhost:39210/email/verify', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/octet-stream' },
-        // @ts-ignore
-        body: encoded,
-      });
-      if (!response.ok) throw new Error('Invalid verification code');
-      setVerifiedEmail(userEmail);
-      setShowEmailVerify(false);
-    } catch (err) {
-      setError((err as Error).message);
-    }
-  };
-
   const requestOtp = async () => {
-    if (!verifiedEmail) return;
+    if (!userEmail) return;
+    setIsVerifying(true);
     try {
-      const encoded = encodeOtpRequest({ email: verifiedEmail, formId: parseInt(id!) });
+      const encoded = encodeOtpRequest({ email: userEmail, formId: parseInt(id!) });
       const response = await fetch(`http://localhost:39210/forms/${id}/request_otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         // @ts-ignore
         body: encoded,
       });
-      if (!response.ok) throw new Error('Failed to request OTP');
+      if (!response.ok) {
+        const text = await response.text();
+        throw new Error(text || 'Failed to request OTP');
+      }
       setShowOtpInput(true);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setIsVerifying(false);
     }
   };
 
   const verifyOtp = async () => {
-    if (!verifiedEmail || !otpCode) return;
+    if (!userEmail || !otpCode) return;
+    setIsVerifying(true);
     try {
-      const encoded = encodeOtpVerify({ email: verifiedEmail, code: otpCode, formId: parseInt(id!) });
+      const encoded = encodeOtpVerify({ email: userEmail, code: otpCode, formId: parseInt(id!) });
       const response = await fetch(`http://localhost:39210/forms/${id}/verify_otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/octet-stream' },
         // @ts-ignore
         body: encoded,
       });
-      if (!response.ok) throw new Error('Invalid OTP');
-      setOtpVerified(true);
+      if (!response.ok) throw new Error('Invalid or expired OTP');
+      
+      const newToken = await response.text();
+      setToken(newToken);
+      localStorage.setItem(`noon_token_${id}`, newToken);
+      setShowOtpInput(false);
+      setNeedsAuth(false);
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setIsVerifying(false);
     }
   };
 
@@ -141,124 +156,62 @@ export const FormSubmission: React.FC = () => {
       formId: parseInt(id!),
       values: values,
       submittedAt: Date.now(),
-      username: '', // Defaulting to empty for now
     };
 
     try {
       const encoded = encodeFormSubmission(submissionPayload);
 
-      if (form.is_anonymous) {
-        if (!isAuthenticated) {
-          loginWithRedirect({ appState: { returnTo: window.location.pathname } });
-          return;
-        }
+      const pkRes = await fetch(`http://localhost:39210/forms/${id}/public_key`);
+      if (!pkRes.ok) throw new Error("Failed to fetch public key");
+      const { n: pubNBase64, e: pubEBase64 } = await pkRes.json();
 
-        const pkRes = await fetch(`http://localhost:39210/forms/${id}/public_key`);
-        if (!pkRes.ok) throw new Error("Failed to fetch public key");
-        const { n: pubNBase64, e: pubEBase64 } = await pkRes.json();
+      const publicN = mycrypto.bytesToBigIntLE(mycrypto.base64ToBytes(pubNBase64));
+      const publicE = mycrypto.bytesToBigIntLE(mycrypto.base64ToBytes(pubEBase64));
 
-        const publicN = mycrypto.bytesToBigIntLE(mycrypto.base64ToBytes(pubNBase64));
-        const publicE = mycrypto.bytesToBigIntLE(mycrypto.base64ToBytes(pubEBase64));
+      const payloadBytes = new Uint8Array(32);
+      window.crypto.getRandomValues(payloadBytes);
+      const mBig = mycrypto.bytesToBigIntLE(payloadBytes);
 
-        const payloadBytes = new Uint8Array(32);
-        window.crypto.getRandomValues(payloadBytes);
-        const mBig = mycrypto.bytesToBigIntLE(payloadBytes);
-
-        let r = 0n;
-        while (true) {
-          r = mycrypto.randomBigInt(publicN);
-          if (r > 0n && mycrypto.gcd(r, publicN) === 1n) break;
-        }
-
-        const r_e = mycrypto.modPow(r, publicE, publicN);
-        const m_blinded = (mBig * r_e) % publicN;
-        const blindedPayload = mycrypto.bigIntToBytesLE(m_blinded);
-
-        const token = await getAccessTokenSilently();
-        const signRes = await fetch(`http://localhost:39210/forms/${id}/blind_sign`, {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${token}`,
-            'Content-Type': 'application/octet-stream',
-          },
-          // @ts-ignore - TS complains about Uint8Array with SharedArrayBuffer
-          body: blindedPayload,
-        });
-
-        if (!signRes.ok) throw new Error(await signRes.text() || "Failed to get blind signature. Are you allowed to participate?");
-        
-        const s_blinded_bytes = new Uint8Array(await signRes.arrayBuffer());
-        const s_blinded = mycrypto.bytesToBigIntLE(s_blinded_bytes);
-
-        const r_inv = mycrypto.modInverse(r, publicN);
-        const s = (s_blinded * r_inv) % publicN;
-        const signatureBytes = mycrypto.bigIntToBytesLE(s);
-
-        const submitRes = await fetch(`http://localhost:39210/forms/${id}/submit_blind`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            payload: mycrypto.bytesToBase64(payloadBytes),
-            signature: mycrypto.bytesToBase64(signatureBytes),
-            submission: mycrypto.bytesToBase64(encoded),
-          })
-        });
-
-        if (!submitRes.ok) throw new Error(await submitRes.text() || "Failed to submit blind form");
-
-      } else if (form.use_email_only) {
-        if (!verifiedEmail) {
-          setError('Please verify your email first');
-          setIsSubmitting(false);
-          return;
-        }
-        
-        if (form.requires_otp_verification && !otpVerified) {
-          setError('Please verify OTP first');
-          setIsSubmitting(false);
-          return;
-        }
-
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/octet-stream',
-          'Authorization': `EmailOnly ${verifiedEmail}`,
-        };
-
-        const response = await fetch(`http://localhost:39210/forms/${id}/submit`, {
-          method: 'POST',
-          headers,
-          // @ts-ignore - TS complains about Uint8Array with SharedArrayBuffer
-          body: encoded,
-        });
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || 'Failed to submit form');
-        }
-      } else {
-        const headers: Record<string, string> = {
-          'Content-Type': 'application/octet-stream',
-        };
-
-        if (isAuthenticated) {
-          const token = await getAccessTokenSilently();
-          headers['Authorization'] = `Bearer ${token}`;
-        }
-
-        const response = await fetch(`http://localhost:39210/forms/${id}/submit`, {
-          method: 'POST',
-          headers,
-          // @ts-ignore - TS complains about Uint8Array with SharedArrayBuffer
-          body: encoded,
-        });
-
-        if (!response.ok) {
-          const text = await response.text();
-          throw new Error(text || 'Failed to submit form');
-        }
+      let r = 0n;
+      while (true) {
+        r = mycrypto.randomBigInt(publicN);
+        if (r > 0n && mycrypto.gcd(r, publicN) === 1n) break;
       }
+
+      const r_e = mycrypto.modPow(r, publicE, publicN);
+      const m_blinded = (mBig * r_e) % publicN;
+      const blindedPayload = mycrypto.bigIntToBytesLE(m_blinded);
+
+      const signRes = await fetch(`http://localhost:39210/forms/${id}/blind_sign`, {
+        method: 'POST',
+        headers: {
+          'Authorization': isAuthenticated ? `Bearer ${await getAccessTokenSilently()}` : `EmailOnly ${token}`,
+          'Content-Type': 'application/octet-stream',
+        },
+        // @ts-ignore
+        body: blindedPayload,
+      });
+
+      if (!signRes.ok) throw new Error(await signRes.text() || "Failed to get blind signature.");
+      
+      const s_blinded_bytes = new Uint8Array(await signRes.arrayBuffer());
+      const s_blinded = mycrypto.bytesToBigIntLE(s_blinded_bytes);
+
+      const r_inv = mycrypto.modInverse(r, publicN);
+      const s = (s_blinded * r_inv) % publicN;
+      const signatureBytes = mycrypto.bigIntToBytesLE(s);
+
+      const submitRes = await fetch(`http://localhost:39210/forms/${id}/submit`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          payload: mycrypto.bytesToBase64(payloadBytes),
+          signature: mycrypto.bytesToBase64(signatureBytes),
+          submission: mycrypto.bytesToBase64(encoded),
+        })
+      });
+
+      if (!submitRes.ok) throw new Error(await submitRes.text() || "Failed to submit form");
 
       setIsSubmitted(true);
     } catch (err) {
@@ -268,155 +221,198 @@ export const FormSubmission: React.FC = () => {
     }
   };
 
-  if (loading) return <div className="loading">Loading form...</div>;
-  if (error) return (
-    <div className="error-card card animate-fade-in">
-      <AlertCircle className="error-icon" />
-      <h2>Error</h2>
-      <p>{error}</p>
-    </div>
-  );
-  if (isSubmitted) return (
-    <div className="submission-success card animate-fade-in">
-      <CheckCircle className="success-icon" />
-      <h2>Submitted!</h2>
-      <p>Thank you for your response. Your submission has been recorded.</p>
+  if (loading) return (
+    <div className="loading-state animate-fade-in" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
+      <div className="spinner" style={{ width: '40px', height: '40px', border: '3px solid rgba(255,255,255,0.1)', borderTopColor: 'white', borderRadius: '50%', animation: 'spin 1s linear infinite' }}></div>
+      <p style={{ marginTop: '1.5rem', color: 'var(--text-muted)' }}>Decrypting secure workspace...</p>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
     </div>
   );
 
-  return (
-    <div className="form-submission animate-fade-in">
-      <div className="card form-header">
-        <h1>{form.name}</h1>
-        {form.is_anonymous && (
-          <div className="anonymous-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'var(--primary-light)', color: 'var(--primary)', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem', marginBottom: '1rem', marginTop: '0.5rem' }}>
-            <Lock size={14} /> Anonymous Form (Blind Signed)
-          </div>
-        )}
-        {form.use_email_only && (
-          <div className="anonymous-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: '0.5rem', background: 'var(--secondary-light)', color: 'var(--secondary)', padding: '0.25rem 0.75rem', borderRadius: '1rem', fontSize: '0.875rem', marginBottom: '1rem', marginTop: '0.5rem' }}>
-            <Mail size={14} /> Email-Only Form
-          </div>
-        )}
-        <p className="description">{form.description}</p>
+  if (isSubmitted) return (
+    <div className="submission-success card animate-fade-in" style={{ textAlign: 'center', padding: '6rem 2rem' }}>
+      <div className="success-icon-wrapper" style={{ margin: '0 auto 2.5rem', width: '80px', height: '80px', background: 'rgba(16, 185, 129, 0.1)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+        <CheckCircle className="success-icon" size={40} style={{ color: 'var(--success)' }} />
+      </div>
+      <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>Data Transmitted</h2>
+      <p className="text-muted" style={{ fontSize: '1.125rem' }}>Your response has been sealed and recorded securely.</p>
+      <button onClick={() => window.location.href = '/'} className="primary-button large" style={{ marginTop: '3.5rem' }}>
+        Return home
+      </button>
+    </div>
+  );
+
+  if (needsAuth) return (
+    <div className="auth-gate card animate-fade-in" style={{ maxWidth: '600px', margin: '4rem auto', padding: '4rem 3rem' }}>
+      <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+        <div className="shield-blob" style={{ margin: '0 auto 2rem', position: 'relative', width: '64px', height: '64px' }}>
+          <div style={{ position: 'absolute', inset: 0, background: 'var(--accent)', filter: 'blur(20px)', opacity: 0.4, borderRadius: '50%' }}></div>
+          <Shield size={64} style={{ position: 'relative', color: 'white' }} />
+        </div>
+        <h2 style={{ fontSize: '2.5rem', fontWeight: 900, marginBottom: '0.5rem' }}>Secure Access</h2>
+        <p className="text-muted">Verification required to view this protected form.</p>
       </div>
 
-      {form.use_email_only && !verifiedEmail && (
-        <div className="card" style={{ marginBottom: '1.5rem', border: '1px solid var(--secondary)', background: 'var(--secondary-light)' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 0 }}>
-            <Mail size={18} /> Verify Your Email
-          </h3>
-          {!showEmailVerify ? (
-            <>
-              <div className="form-group">
-                <label>Your Email</label>
+      <div className="auth-flow" style={{ position: 'relative' }}>
+        {!showOtpInput ? (
+          <form onSubmit={(e) => { e.preventDefault(); requestOtp(); }} className="animate-fade-in">
+            <div className="form-group">
+              <label>Institutional Email</label>
+              <div style={{ position: 'relative' }}>
+                <Mail size={18} style={{ position: 'absolute', left: '1.25rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input 
                   type="email" 
                   value={userEmail} 
                   onChange={(e) => setUserEmail(e.target.value)}
-                  placeholder="your@email.com"
+                  placeholder="name@company.com"
+                  style={{ paddingLeft: '3.5rem' }}
+                  required
                 />
               </div>
-              <button onClick={requestEmailVerification} className="primary-button">
-                Send Verification Code
-              </button>
-            </>
-          ) : (
-            <>
-              <div className="form-group">
-                <label>Verification Code</label>
-                <input 
-                  type="text" 
-                  value={emailVerifyCode} 
-                  onChange={(e) => setEmailVerifyCode(e.target.value)}
-                  placeholder="123456"
-                />
-              </div>
-              <button onClick={verifyEmail} className="primary-button">
-                Verify Email
-              </button>
-            </>
-          )}
-        </div>
-      )}
-
-      {form.use_email_only && verifiedEmail && form.requires_otp_verification && !otpVerified && (
-        <div className="card" style={{ marginBottom: '1.5rem', border: '1px solid var(--secondary)', background: 'var(--secondary-light)' }}>
-          <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginTop: 0 }}>
-            <Shield size={18} /> OTP Verification Required
-          </h3>
-          {!showOtpInput ? (
-            <button onClick={requestOtp} className="primary-button">
-              Request OTP
+            </div>
+            <button 
+              type="submit"
+              className="primary-button large" 
+              style={{ width: '100%' }}
+              disabled={!userEmail || isVerifying}
+            >
+              {isVerifying ? 'Generating OTP...' : <><Send size={20} /> Request Access Key</>}
             </button>
-          ) : (
-            <>
-              <div className="form-group">
-                <label>OTP Code</label>
+            <div style={{ margin: '2.5rem 0', display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+              <span style={{ fontSize: '0.75rem', fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>OR</span>
+              <div style={{ flex: 1, height: '1px', background: 'var(--border)' }}></div>
+            </div>
+            <button 
+              type="button"
+              onClick={() => loginWithRedirect({ appState: { returnTo: window.location.pathname } })} 
+              className="secondary-button"
+              style={{ width: '100%', padding: '1.25rem' }}
+            >
+              Log In with Foundation Account
+            </button>
+          </form>
+        ) : (
+          <form onSubmit={(e) => { e.preventDefault(); verifyOtp(); }} className="animate-fade-in">
+            <button type="button" onClick={() => setShowOtpInput(false)} className="text-button" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', paddingLeft: 0 }}>
+              <ArrowLeft size={16} /> Change email
+            </button>
+            <div className="form-group">
+              <label>Authentication Code</label>
+              <div style={{ position: 'relative' }}>
+                <Hash size={18} style={{ position: 'absolute', left: '1.25rem', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                 <input 
                   type="text" 
                   value={otpCode} 
                   onChange={(e) => setOtpCode(e.target.value)}
-                  placeholder="123456"
+                  placeholder="000000"
+                  maxLength={6}
+                  style={{ paddingLeft: '3.5rem', letterSpacing: '0.5em', fontWeight: 700, fontSize: '1.5rem' }}
+                  required
                 />
               </div>
-              <button onClick={verifyOtp} className="primary-button">
-                Verify OTP
-              </button>
-            </>
-          )}
-        </div>
-      )}
+              <p className="help-text" style={{ marginTop: '1rem' }}>Enter the 6-digit code sent to {userEmail}</p>
+            </div>
+            <button 
+              type="submit"
+              className="primary-button large" 
+              style={{ width: '100%' }}
+              disabled={otpCode.length < 6 || isVerifying}
+            >
+              {isVerifying ? 'Authenticating...' : <><ChevronRight size={20} /> Verify & Access</>}
+            </button>
+          </form>
+        )}
+      </div>
+      
+      {error && <div className="error-message" style={{ marginTop: '2.5rem', fontSize: '0.875rem' }}>{error}</div>}
+    </div>
+  );
 
-      <form onSubmit={handleSubmit} className="submission-fields">
-        {form.fields.map((field: any) => (
-          <div key={field.name} className="form-group card">
-            <label>
-              {field.label}
-              {field.required && <span className="required">*</span>}
+  return (
+    <div className="form-submission container animate-fade-in" style={{ paddingBottom: '10rem' }}>
+      <div className="header-section" style={{ marginBottom: '5rem', textAlign: 'center' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '2rem' }}>
+          <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.2)' }}><Lock size={12} /> Anonymous</span>
+          <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)' }}><Shield size={12} /> Verified Session</span>
+        </div>
+        <h1 style={{ fontSize: '4.5rem', fontWeight: 900, marginBottom: '1.5rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
+        <p className="description text-muted" style={{ fontSize: '1.25rem', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>{form?.description}</p>
+      </div>
+
+      <form onSubmit={handleSubmit} className="submission-fields" style={{ maxWidth: '800px', margin: '0 auto' }}>
+        {form?.fields.map((field, index: number) => (
+          <div key={field.name} className="form-group card animate-fade-in" style={{ padding: '2.5rem' }}>
+            <label style={{ fontSize: '0.875rem', marginBottom: '1.5rem', fontWeight: 800, color: 'white', display: 'flex', justifyContent: 'space-between' }}>
+              <span>{field.label} {field.required && <span style={{ color: 'var(--error)' }}>*</span>}</span>
+              <span style={{ opacity: 0.3, fontWeight: 400 }}>0{index + 1}</span>
             </label>
             
-            {field.type === 1 ? ( // TEXTAREA
-              <textarea 
-                placeholder={field.placeholder}
-                required={field.required}
-                onChange={(e) => handleInputChange(field.name, e.target.value, 'stringValue')}
-              />
-            ) : field.type === 2 ? ( // NUMBER
-              <input 
-                type="number"
-                placeholder={field.placeholder}
-                required={field.required}
-                onChange={(e) => handleInputChange(field.name, parseFloat(e.target.value), 'doubleValue')}
-              />
-            ) : field.type === 6 ? ( // CHECKBOX
-               <input 
-                type="checkbox"
-                required={field.required}
-                onChange={(e) => handleInputChange(field.name, e.target.checked, 'boolValue')}
-              />
-            ) : (
-              <input 
-                type={field.type === 9 ? 'email' : field.type === 10 ? 'url' : 'text'}
-                placeholder={field.placeholder}
-                required={field.required}
-                onChange={(e) => handleInputChange(field.name, e.target.value, 'stringValue')}
-              />
-            )}
-            {field.helpText && <p className="help-text">{field.helpText}</p>}
+            <div className="input-wrapper">
+              {field.type === FieldType.TEXTAREA ? ( // TEXTAREA
+                <textarea 
+                  placeholder={field.placeholder || "Your detailed response..."}
+                  required={field.required}
+                  onChange={(e) => handleInputChange(field.name, e.target.value, 'stringValue')}
+                  rows={4}
+                  style={{ resize: 'vertical' }}
+                />
+              ) : field.type === FieldType.NUMBER ? ( // NUMBER
+                <input 
+                  type="number"
+                  placeholder={field.placeholder || "0.00"}
+                  required={field.required}
+                  onChange={(e) => handleInputChange(field.name, parseFloat(e.target.value), 'doubleValue')}
+                />
+              ) : field.type === FieldType.CHECKBOX ? ( // CHECKBOX
+                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.5rem 0' }}>
+                   <input 
+                    type="checkbox"
+                    id={`check-${field.name}`}
+                    required={field.required}
+                    onChange={(e) => handleInputChange(field.name, e.target.checked, 'boolValue')}
+                    style={{ width: '1.5rem', height: '1.5rem', cursor: 'pointer' }}
+                  />
+                  <label htmlFor={`check-${field.name}`} style={{ margin: 0, textTransform: 'none', letterSpacing: 0, fontWeight: 400, cursor: 'pointer' }}>
+                    I acknowledge and confirm this data point.
+                  </label>
+                </div>
+              ) : (
+                <input 
+                  type={field.type === FieldType.EMAIL ? 'email' : field.type === FieldType.URL ? 'url' : 'text'}
+                  placeholder={field.placeholder || "Type your answer here..."}
+                  required={field.required}
+                  onChange={(e) => handleInputChange(field.name, e.target.value, 'stringValue')}
+                />
+              )}
+            </div>
+            {field.helpText && <p className="help-text" style={{ marginTop: '1.25rem', fontSize: '0.875rem', opacity: 0.6 }}>{field.helpText}</p>}
           </div>
         ))}
 
-        <div className="actions">
+        <div style={{ marginTop: '4rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
           <button 
             type="submit" 
-            className="primary-button" 
+            className="primary-button large" 
             disabled={isSubmitting}
+            style={{ minWidth: '300px' }}
           >
-            {isSubmitting ? 'Submitting...' : <><Send size={18} /> Submit Response</>}
+            {isSubmitting ? 'Encrypting Payload...' : <><Send size={20} /> Submit Response</>}
           </button>
+          <p className="text-muted" style={{ marginTop: '1.5rem', fontSize: '0.875rem' }}>
+            Responses are end-to-end encrypted and immutable once sent.
+          </p>
         </div>
       </form>
+      
+      {error && (
+        <div className="error-message card animate-fade-in" style={{ maxWidth: '800px', margin: '2rem auto', borderColor: 'var(--error)', background: 'rgba(239, 68, 68, 0.05)' }}>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+            <AlertCircle color="var(--error)" />
+            <span>{error}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
