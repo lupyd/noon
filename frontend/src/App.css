@@ -14,11 +14,6 @@ body {
   -moz-osx-font-smoothing: grayscale;
   background-color: var(--bg);
   color: var(--text);
-  background-image: 
-    radial-gradient(circle at 0% 0%, rgba(109, 40, 217, 0.1) 0%, transparent 40%),
-    radial-gradient(circle at 100% 100%, rgba(59, 130, 246, 0.1) 0%, transparent 40%),
-    radial-gradient(circle at 50% 50%, var(--bg-glow) 0%, var(--bg) 100%);
-  background-attachment: fixed;
   overflow-x: hidden;
   transition: background-color 0.3s ease, color 0.3s ease;
 }
@@ -37,15 +32,13 @@ body {
 
 /* Navbar */
 .navbar {
-  background-color: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--glass-border);
+  background-color: var(--bg);
+  border-bottom: 1px solid var(--border);
   padding: 1rem 0;
   position: sticky;
   top: 0;
   z-index: 100;
-  min-height: 70px;
+  min-height: 60px;
   display: flex;
   align-items: center;
 }
@@ -75,11 +68,10 @@ body {
 }
 
 .noon-logo-hero {
-  font-size: 12rem;
+  font-size: 8rem;
   justify-content: center;
-  margin-bottom: 4rem;
+  margin-bottom: 3rem;
   font-weight: 900;
-  filter: drop-shadow(0 0 40px var(--border));
 }
 
 .navbar-nav {
@@ -117,29 +109,26 @@ body {
 /* Main Content */
 .main-content {
   flex: 1;
-  padding: 6rem 0;
+  padding: 4rem 0;
 }
 
 /* Cards */
 .card {
   background: var(--card-bg);
   border: 1px solid var(--card-border);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border-radius: 1.5rem;
-  padding: 3rem;
-  margin-bottom: 2rem;
-  box-shadow: 0 10px 30px var(--shadow);
+  border-radius: 8px;
+  padding: 2rem;
+  margin-bottom: 1.5rem;
   min-height: 100px;
 }
 
 .card:hover {
-  border-color: var(--glass-border);
+  border-color: var(--border);
 }
 
 /* Forms */
 .form-group {
-  margin-bottom: 2.5rem;
+  margin-bottom: 1.5rem;
 }
 
 .form-group.sm {
@@ -167,8 +156,8 @@ textarea {
   background-color: var(--input-bg);
   border: 1px solid var(--border);
   color: var(--text);
-  padding: 1rem 1.25rem;
-  border-radius: 0.75rem;
+  padding: 0.75rem 1rem;
+  border-radius: 6px;
   font-size: 1rem;
   font-family: inherit;
   transition: border-color 0.2s ease;
@@ -179,18 +168,18 @@ textarea:focus,
 select:focus {
   outline: none;
   border-color: var(--primary);
-  background-color: var(--glass-bg);
-  box-shadow: 0 0 0 4px var(--glass-border);
+  background-color: var(--input-bg);
+  box-shadow: 0 0 0 2px var(--border);
 }
 
 .primary-button {
-  background-color: var(--primary);
+  background-color: var(--text);
   color: var(--bg);
   border: none;
-  padding: 0.875rem 1.75rem;
-  border-radius: 0.75rem;
-  font-weight: 600;
-  font-size: 1rem;
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.9375rem;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -209,9 +198,9 @@ select:focus {
 }
 
 .primary-button.large {
-  padding: 1.5rem 3rem;
-  font-size: 1.35rem;
-  border-radius: 1.25rem;
+  padding: 1rem 2rem;
+  font-size: 1rem;
+  border-radius: 6px;
 }
 
 .primary-button:disabled {
@@ -237,24 +226,20 @@ select:focus {
 }
 
 .hero h1 {
-  font-size: 4.5rem;
-  font-weight: 900;
-  margin-bottom: 2.5rem;
-  letter-spacing: -0.06em;
-  line-height: 0.8;
-  background: linear-gradient(180deg, var(--text) 30%, var(--text-muted) 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  filter: drop-shadow(0 20px 40px rgba(0,0,0,0.2));
+  font-size: 3.5rem;
+  font-weight: 800;
+  margin-bottom: 1.5rem;
+  line-height: 1.1;
+  color: var(--text);
 }
 
 .hero p {
-  font-size: 1.5rem;
+  font-size: 1.25rem;
   color: var(--text-muted);
   max-width: 600px;
   margin: 0 auto 2rem;
-  line-height: 1.4;
-  font-weight: 300;
+  line-height: 1.5;
+  font-weight: 400;
 }
 
 /* Badges */
@@ -298,12 +283,9 @@ select:focus {
   width: 100%;
   gap: 1rem;
   background: var(--card-bg);
-  border: 1px solid var(--card-border);
+  border: 1px solid var(--border);
   padding: 0.5rem;
-  border-radius: 1rem;
-  backdrop-filter: blur(8px);
-  -webkit-backdrop-filter: blur(8px);
-  box-shadow: 0 4px 20px var(--shadow);
+  border-radius: 8px;
 }
 
 .search-input {
@@ -316,8 +298,8 @@ select:focus {
 }
 
 .join-button {
-  padding: 1rem 2rem !important;
-  border-radius: 1rem !important;
+  padding: 0.75rem 1.5rem !important;
+  border-radius: 6px !important;
   white-space: nowrap;
 }
 
@@ -505,13 +487,13 @@ code {
 }
 
 .secondary-button {
-  background-color: var(--glass-bg);
+  background-color: transparent;
   color: var(--text);
-  border: 1px solid var(--glass-border);
-  padding: 0.875rem 1.75rem;
-  border-radius: 0.75rem;
-  font-weight: 600;
-  font-size: 1rem;
+  border: 1px solid var(--border);
+  padding: 0.75rem 1.5rem;
+  border-radius: 6px;
+  font-weight: 500;
+  font-size: 0.9375rem;
   cursor: pointer;
   display: inline-flex;
   align-items: center;
@@ -522,8 +504,7 @@ code {
 }
 
 .secondary-button:hover {
-  background-color: var(--glass-border);
-  border-color: var(--text-muted);
+  background-color: var(--glass-bg);
 }
 
 .primary-icon {
@@ -532,28 +513,24 @@ code {
 
 /* Theme Toggle */
 .theme-toggle-btn {
-  background: var(--glass-bg);
-  border: 1px solid var(--glass-border);
-  color: var(--text);
-  width: 42px;
-  height: 42px;
-  border-radius: 12px;
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  padding: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: color 0.2s ease;
   overflow: hidden;
-  margin-left: 1rem;
 }
 
 .theme-toggle-btn:hover {
-  background: var(--glass-border);
-  transform: translateY(-1px);
+  color: var(--text);
 }
 
 .theme-toggle-btn:active {
-  transform: translateY(0);
+  transform: scale(0.9);
 }
 
 .theme-toggle-icon {

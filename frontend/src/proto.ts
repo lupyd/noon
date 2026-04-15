@@ -1,8 +1,8 @@
-import { 
-  Form, 
-  FormSubmission, 
-  OtpRequest, 
-  OtpVerify, 
+import {
+  Form,
+  FormSubmission,
+  OtpRequest,
+  OtpVerify,
   FieldType,
   FieldValue,
   BlindSubmission,
@@ -10,11 +10,11 @@ import {
   UserForms
 } from './generated/forms';
 
-export type { 
-  Form as FormType, 
-  FormSubmission as FormSubmissionType, 
-  OtpRequest as OtpRequestType, 
-  OtpVerify as OtpVerifyType, 
+export type {
+  Form as FormType,
+  FormSubmission as FormSubmissionType,
+  OtpRequest as OtpRequestType,
+  OtpVerify as OtpVerifyType,
   FieldValue,
   BlindSubmission as BlindSubmissionType,
   FormResults as FormResultsType,
@@ -57,4 +57,8 @@ export function encodeOtpRequest(payload: OtpRequest): Uint8Array {
 
 export function encodeOtpVerify(payload: OtpVerify): Uint8Array {
   return OtpVerify.encode(payload).finish();
+}
+
+export function formSubmissionToJson(sub: FormSubmission): any {
+  return FormSubmission.toJSON(sub);
 }

@@ -1,13 +1,11 @@
-use noon_server::pb::forms::{
-    OtpRequest, OtpVerify, Form, FormSubmission, BlindSubmission
-};
+use base64::Engine;
+use noon_core::blind::{create_blinded_message, unblind_signature};
+use noon_server::pb::forms::{BlindSubmission, Form, FormSubmission, OtpRequest, OtpVerify};
 use noon_server::start_http_server;
 use quick_protobuf::{MessageWrite, Writer};
 use reqwest::{Client, StatusCode};
-use std::time::Duration;
 use std::borrow::Cow;
-use noon_core::blind::{create_blinded_message, unblind_signature};
-use base64::Engine;
+use std::time::Duration;
 
 fn serialize_proto<T: MessageWrite>(msg: &T) -> Vec<u8> {
     let mut bytes = Vec::new();
@@ -57,7 +55,7 @@ async fn test_form_creation_participants_required() {
 
     assert_eq!(res.status(), StatusCode::BAD_REQUEST);
     let body = res.text().await.unwrap();
-    assert!(body.contains("allowed_participants and mentioned_emails cannot be empty"));
+    assert!(body.contains("allowed_participants cannot be empty"));
 }
 
 async fn submit_form_blind(
@@ -75,11 +73,18 @@ async fn submit_form_blind(
         .await
         .expect("Failed to get public key");
     assert_eq!(pk_res.status(), StatusCode::OK);
-    let pk_body = pk_res.json::<serde_json::Value>().await.expect("Failed to parse public key");
-    
-    let n_bytes = base64::prelude::BASE64_STANDARD.decode(pk_body["n"].as_str().unwrap()).unwrap();
-    let e_bytes = base64::prelude::BASE64_STANDARD.decode(pk_body["e"].as_str().unwrap()).unwrap();
-    
+    let pk_body = pk_res
+        .json::<serde_json::Value>()
+        .await
+        .expect("Failed to parse public key");
+
+    let n_bytes = base64::prelude::BASE64_STANDARD
+        .decode(pk_body["n"].as_str().unwrap())
+        .unwrap();
+    let e_bytes = base64::prelude::BASE64_STANDARD
+        .decode(pk_body["e"].as_str().unwrap())
+        .unwrap();
+
     let n = rsa::BigUint::from_bytes_le(&n_bytes);
     let e = rsa::BigUint::from_bytes_le(&e_bytes);
     let public_key = rsa::RsaPublicKey::new(n, e).expect("Failed to create public key");
@@ -133,8 +138,7 @@ async fn test_complete_flow_creator_to_submitter() {
     let mut form = Form::default();
     form.name = "Flow Test Form".into();
     form.owner = "creator".into();
-    form.allowed_participants = vec!["allowed_user".into()];
-    form.mentioned_emails = vec![test_email.clone().into()];
+    form.allowed_participants = vec!["allowed_user".into(), test_email.clone().into()];
 
     let create_res = client
         .post(format!("{}/forms/create", base_url))
@@ -171,7 +175,15 @@ async fn test_complete_flow_creator_to_submitter() {
     // 4. Allowed user (username) Submits form - Success
     let mut submission = FormSubmission::default();
     submission.form_id = form_id;
-    let status = submit_form_blind(&client, &base_url, form_id, &submission, "Bearer", "allowed_user").await;
+    let status = submit_form_blind(
+        &client,
+        &base_url,
+        form_id,
+        &submission,
+        "Bearer",
+        "allowed_user",
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
 
     // 5. Allowed user (email) tries to GET form WITHOUT verification - Failure
@@ -245,6 +257,14 @@ async fn test_complete_flow_creator_to_submitter() {
     // 8. Allowed user (email) Submits form AFTER per-form OTP - Success
     let mut submission = FormSubmission::default();
     submission.form_id = form_id;
-    let status = submit_form_blind(&client, &base_url, form_id, &submission, "EmailOnly", &form_token).await;
+    let status = submit_form_blind(
+        &client,
+        &base_url,
+        form_id,
+        &submission,
+        "EmailOnly",
+        &form_token,
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
 }

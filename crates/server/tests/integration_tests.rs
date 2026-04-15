@@ -5,7 +5,6 @@ use noon_server::start_http_server;
 use quick_protobuf::{MessageWrite, Writer};
 use reqwest::{Client, StatusCode};
 use std::borrow::Cow;
-use std::collections::HashMap;
 use std::time::Duration;
 
 use base64::Engine;
@@ -33,13 +32,13 @@ async fn setup_test_server(port: u16) -> String {
         let _ = start_http_server(port).await;
     });
 
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    tokio::time::sleep(Duration::from_millis(1000)).await;
     format!("http://127.0.0.1:{}", port)
 }
 
 #[tokio::test]
 async fn test_create_form() {
-    let port = 39216;
+    let port = 40216;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -67,7 +66,7 @@ async fn test_create_form() {
 
 #[tokio::test]
 async fn test_get_form() {
-    let port = 39217;
+    let port = 40217;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -101,7 +100,7 @@ async fn test_get_form() {
 
 #[tokio::test]
 async fn test_get_form_not_found() {
-    let port = 39218;
+    let port = 40218;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -186,7 +185,7 @@ async fn submit_form_blind(
 
 #[tokio::test]
 async fn test_submit_form() {
-    let port = 39219;
+    let port = 40219;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -211,11 +210,10 @@ async fn test_submit_form() {
 
     let mut submission = FormSubmission::default();
     submission.form_id = form_id;
-    let mut values = HashMap::new();
     let mut fv = FieldValue::default();
+    fv.field_id = "field_1".into();
     fv.value = mod_FieldValue::OneOfvalue::string_value("Test Answer".into());
-    values.insert(Cow::Borrowed("question_1"), fv);
-    submission.values = values;
+    submission.values.push(fv);
 
     let status =
         submit_form_blind(&client, &base_url, form_id, &submission, Some("submitter")).await;
@@ -224,7 +222,7 @@ async fn test_submit_form() {
 
 #[tokio::test]
 async fn test_submit_form_unauthorized() {
-    let port = 39220;
+    let port = 40220;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -255,7 +253,7 @@ async fn test_submit_form_unauthorized() {
 
 #[tokio::test]
 async fn test_submit_to_anonymous_form_fails() {
-    let port = 39221;
+    let port = 40221;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -296,7 +294,7 @@ async fn test_submit_to_anonymous_form_fails() {
 
 #[tokio::test]
 async fn test_get_public_key() {
-    let port = 39223;
+    let port = 40223;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -333,7 +331,7 @@ async fn test_get_public_key() {
 
 #[tokio::test]
 async fn test_create_and_submit_form_with_no_token_verification() {
-    let port = 39224;
+    let port = 40224;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -361,11 +359,10 @@ async fn test_create_and_submit_form_with_no_token_verification() {
     let mut submission = FormSubmission::default();
     submission.form_id = form_id;
 
-    let mut values = HashMap::new();
     let mut fv = FieldValue::default();
+    fv.field_id = "field_1".into();
     fv.value = mod_FieldValue::OneOfvalue::string_value("Test Value".into());
-    values.insert(Cow::Borrowed("test_field"), fv);
-    submission.values = values;
+    submission.values.push(fv);
 
     let status = submit_form_blind(
         &client,
@@ -380,7 +377,7 @@ async fn test_create_and_submit_form_with_no_token_verification() {
 
 #[tokio::test]
 async fn test_create_form_with_fields() {
-    let port = 39225;
+    let port = 40225;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -391,6 +388,7 @@ async fn test_create_form_with_fields() {
     form.allowed_participants.push("testuser".into());
 
     let mut field = mod_Form::Field::default();
+    field.id = "email_field".into();
     field.name = "email".into();
     field.label = "Email Address".into();
     field.type_pb = FieldType::TEXT;
@@ -399,6 +397,7 @@ async fn test_create_form_with_fields() {
     form.fields.push(field);
 
     let mut field2 = mod_Form::Field::default();
+    field2.id = "age_field".into();
     field2.name = "age".into();
     field2.label = "Age".into();
     field2.type_pb = FieldType::NUMBER;
@@ -431,7 +430,7 @@ async fn test_create_form_with_fields() {
 
 #[tokio::test]
 async fn test_create_form_with_otp_verification() {
-    let port = 39226;
+    let port = 40226;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -439,7 +438,7 @@ async fn test_create_form_with_otp_verification() {
     form.name = "OTP Test Form".into();
     form.description = "Form with OTP verification".into();
     form.owner = "testuser".into();
-    form.mentioned_emails.push("test@example.com".into());
+    form.allowed_participants.push("test@example.com".into());
 
     let res = client
         .post(format!("{}/forms/create", base_url))
@@ -491,7 +490,7 @@ async fn test_create_form_with_otp_verification() {
 
 #[tokio::test]
 async fn test_request_otp_for_non_otp_form_fails() {
-    let port = 39227;
+    let port = 40227;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -530,7 +529,7 @@ async fn test_request_otp_for_non_otp_form_fails() {
 
 #[tokio::test]
 async fn test_request_otp_for_unauthorized_email_fails() {
-    let port = 39228;
+    let port = 40228;
     let base_url = setup_test_server(port).await;
     let client = Client::new();
 
@@ -538,8 +537,8 @@ async fn test_request_otp_for_unauthorized_email_fails() {
     form.name = "OTP Form".into();
     form.description = "Form with OTP".into();
     form.owner = "testuser".into();
-    form.allowed_participants.push("testuser".into());
-    form.mentioned_emails.push("authorized@example.com".into());
+    form.allowed_participants
+        .push("authorized@example.com".into());
 
     let create_res = client
         .post(format!("{}/forms/create", base_url))

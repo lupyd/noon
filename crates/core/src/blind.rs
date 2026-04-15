@@ -104,7 +104,6 @@ impl BlindedMessage {
 #[test]
 fn test_blind_sign() {
     use rand::RngCore;
-    let _ = env_logger::try_init();
 
     let server = BlindSigner::generate();
 
@@ -114,7 +113,7 @@ fn test_blind_sign() {
         .map(|x| x.parse().unwrap_or(1))
         .unwrap();
     for i in 0..batch_size {
-        log::info!("Batch ID: {}", i);
+        println!("Batch ID: {}", i);
         let mut payload = vec![0u8; 2048];
 
         rand::rngs::OsRng::default()
@@ -123,14 +122,14 @@ fn test_blind_sign() {
 
         let blinded_message = create_blinded_message(&payload, &server_public_key);
 
-        log::info!("Message: {:X?}Blinded Message", blinded_message.message(),);
-        log::info!("Blinded Message: {:X?}", blinded_message.blinded_message());
+        println!("Message: {:X?}Blinded Message", blinded_message.message(),);
+        println!("Blinded Message: {:X?}", blinded_message.blinded_message());
         let blinded_signature = server
             .blind_sign(&blinded_message.blinded_message())
             .unwrap();
-        log::info!("Blinded Signature: {:X?}", blinded_signature);
+        println!("Blinded Signature: {:X?}", blinded_signature);
         let signature = unblind_signature(&blinded_message, &blinded_signature, &server_public_key);
-        log::info!("Signature: {:X?}", signature);
+        println!("Signature: {:X?}", signature);
 
         assert!(server.verify(&blinded_message.message(), &signature));
         assert!(!server.verify(&blinded_message.message(), &blinded_signature));

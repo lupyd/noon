@@ -118,11 +118,11 @@ export interface Form {
   owner: string;
   fields: Form_Field[];
   allowedParticipants: string[];
-  mentionedEmails: string[];
   deadline: number;
 }
 
 export interface Form_Field {
+  id: string;
   type: FieldType;
   name: string;
   label: string;
@@ -143,16 +143,12 @@ export interface Form_NumberConfig {
 
 export interface FormSubmission {
   formId: number;
-  values: { [key: string]: FieldValue };
+  values: FieldValue[];
   submittedAt: number;
 }
 
-export interface FormSubmission_ValuesEntry {
-  key: string;
-  value: FieldValue | undefined;
-}
-
 export interface FieldValue {
+  fieldId: string;
   stringValue?: string | undefined;
   integerValue?: number | undefined;
   doubleValue?: number | undefined;
@@ -372,7 +368,6 @@ function createBaseForm(): Form {
     owner: "",
     fields: [],
     allowedParticipants: [],
-    mentionedEmails: [],
     deadline: 0,
   };
 }
@@ -402,9 +397,6 @@ export const Form: MessageFns<Form> = {
     }
     for (const v of message.allowedParticipants) {
       writer.uint32(82).string(v!);
-    }
-    for (const v of message.mentionedEmails) {
-      writer.uint32(98).string(v!);
     }
     if (message.deadline !== 0) {
       writer.uint32(104).uint64(message.deadline);
@@ -483,14 +475,6 @@ export const Form: MessageFns<Form> = {
           message.allowedParticipants.push(reader.string());
           continue;
         }
-        case 12: {
-          if (tag !== 98) {
-            break;
-          }
-
-          message.mentionedEmails.push(reader.string());
-          continue;
-        }
         case 13: {
           if (tag !== 104) {
             break;
@@ -530,11 +514,6 @@ export const Form: MessageFns<Form> = {
         : globalThis.Array.isArray(object?.allowed_participants)
         ? object.allowed_participants.map((e: any) => globalThis.String(e))
         : [],
-      mentionedEmails: globalThis.Array.isArray(object?.mentionedEmails)
-        ? object.mentionedEmails.map((e: any) => globalThis.String(e))
-        : globalThis.Array.isArray(object?.mentioned_emails)
-        ? object.mentioned_emails.map((e: any) => globalThis.String(e))
-        : [],
       deadline: isSet(object.deadline) ? globalThis.Number(object.deadline) : 0,
     };
   },
@@ -565,9 +544,6 @@ export const Form: MessageFns<Form> = {
     if (message.allowedParticipants?.length) {
       obj.allowedParticipants = message.allowedParticipants;
     }
-    if (message.mentionedEmails?.length) {
-      obj.mentionedEmails = message.mentionedEmails;
-    }
     if (message.deadline !== 0) {
       obj.deadline = Math.round(message.deadline);
     }
@@ -587,7 +563,6 @@ export const Form: MessageFns<Form> = {
     message.owner = object.owner ?? "";
     message.fields = object.fields?.map((e) => Form_Field.fromPartial(e)) || [];
     message.allowedParticipants = object.allowedParticipants?.map((e) => e) || [];
-    message.mentionedEmails = object.mentionedEmails?.map((e) => e) || [];
     message.deadline = object.deadline ?? 0;
     return message;
   },
@@ -595,6 +570,7 @@ export const Form: MessageFns<Form> = {
 
 function createBaseForm_Field(): Form_Field {
   return {
+    id: "",
     type: 0,
     name: "",
     label: "",
@@ -610,6 +586,9 @@ function createBaseForm_Field(): Form_Field {
 
 export const Form_Field: MessageFns<Form_Field> = {
   encode(message: Form_Field, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.id !== "") {
+      writer.uint32(90).string(message.id);
+    }
     if (message.type !== 0) {
       writer.uint32(8).int32(message.type);
     }
@@ -650,6 +629,14 @@ export const Form_Field: MessageFns<Form_Field> = {
     while (reader.pos < end) {
       const tag = reader.uint32();
       switch (tag >>> 3) {
+        case 11: {
+          if (tag !== 90) {
+            break;
+          }
+
+          message.id = reader.string();
+          continue;
+        }
         case 1: {
           if (tag !== 8) {
             break;
@@ -741,6 +728,7 @@ export const Form_Field: MessageFns<Form_Field> = {
 
   fromJSON(object: any): Form_Field {
     return {
+      id: isSet(object.id) ? globalThis.String(object.id) : "",
       type: isSet(object.type) ? fieldTypeFromJSON(object.type) : 0,
       name: isSet(object.name) ? globalThis.String(object.name) : "",
       label: isSet(object.label) ? globalThis.String(object.label) : "",
@@ -772,6 +760,9 @@ export const Form_Field: MessageFns<Form_Field> = {
 
   toJSON(message: Form_Field): unknown {
     const obj: any = {};
+    if (message.id !== "") {
+      obj.id = message.id;
+    }
     if (message.type !== 0) {
       obj.type = fieldTypeToJSON(message.type);
     }
@@ -810,6 +801,7 @@ export const Form_Field: MessageFns<Form_Field> = {
   },
   fromPartial<I extends Exact<DeepPartial<Form_Field>, I>>(object: I): Form_Field {
     const message = createBaseForm_Field();
+    message.id = object.id ?? "";
     message.type = object.type ?? 0;
     message.name = object.name ?? "";
     message.label = object.label ?? "";
@@ -921,7 +913,7 @@ export const Form_NumberConfig: MessageFns<Form_NumberConfig> = {
 };
 
 function createBaseFormSubmission(): FormSubmission {
-  return { formId: 0, values: {}, submittedAt: 0 };
+  return { formId: 0, values: [], submittedAt: 0 };
 }
 
 export const FormSubmission: MessageFns<FormSubmission> = {
@@ -929,9 +921,9 @@ export const FormSubmission: MessageFns<FormSubmission> = {
     if (message.formId !== 0) {
       writer.uint32(8).uint64(message.formId);
     }
-    globalThis.Object.entries(message.values).forEach(([key, value]: [string, FieldValue]) => {
-      FormSubmission_ValuesEntry.encode({ key: key as any, value }, writer.uint32(18).fork()).join();
-    });
+    for (const v of message.values) {
+      FieldValue.encode(v!, writer.uint32(18).fork()).join();
+    }
     if (message.submittedAt !== 0) {
       writer.uint32(24).uint64(message.submittedAt);
     }
@@ -958,10 +950,7 @@ export const FormSubmission: MessageFns<FormSubmission> = {
             break;
           }
 
-          const entry2 = FormSubmission_ValuesEntry.decode(reader, reader.uint32());
-          if (entry2.value !== undefined) {
-            message.values[entry2.key] = entry2.value;
-          }
+          message.values.push(FieldValue.decode(reader, reader.uint32()));
           continue;
         }
         case 3: {
@@ -988,15 +977,7 @@ export const FormSubmission: MessageFns<FormSubmission> = {
         : isSet(object.form_id)
         ? globalThis.Number(object.form_id)
         : 0,
-      values: isObject(object.values)
-        ? (globalThis.Object.entries(object.values) as [string, any][]).reduce(
-          (acc: { [key: string]: FieldValue }, [key, value]: [string, any]) => {
-            acc[key] = FieldValue.fromJSON(value);
-            return acc;
-          },
-          {},
-        )
-        : {},
+      values: globalThis.Array.isArray(object?.values) ? object.values.map((e: any) => FieldValue.fromJSON(e)) : [],
       submittedAt: isSet(object.submittedAt)
         ? globalThis.Number(object.submittedAt)
         : isSet(object.submitted_at)
@@ -1010,14 +991,8 @@ export const FormSubmission: MessageFns<FormSubmission> = {
     if (message.formId !== 0) {
       obj.formId = Math.round(message.formId);
     }
-    if (message.values) {
-      const entries = globalThis.Object.entries(message.values) as [string, FieldValue][];
-      if (entries.length > 0) {
-        obj.values = {};
-        entries.forEach(([k, v]) => {
-          obj.values[k] = FieldValue.toJSON(v);
-        });
-      }
+    if (message.values?.length) {
+      obj.values = message.values.map((e) => FieldValue.toJSON(e));
     }
     if (message.submittedAt !== 0) {
       obj.submittedAt = Math.round(message.submittedAt);
@@ -1031,100 +1006,15 @@ export const FormSubmission: MessageFns<FormSubmission> = {
   fromPartial<I extends Exact<DeepPartial<FormSubmission>, I>>(object: I): FormSubmission {
     const message = createBaseFormSubmission();
     message.formId = object.formId ?? 0;
-    message.values = (globalThis.Object.entries(object.values ?? {}) as [string, FieldValue][]).reduce(
-      (acc: { [key: string]: FieldValue }, [key, value]: [string, FieldValue]) => {
-        if (value !== undefined) {
-          acc[key] = FieldValue.fromPartial(value);
-        }
-        return acc;
-      },
-      {},
-    );
+    message.values = object.values?.map((e) => FieldValue.fromPartial(e)) || [];
     message.submittedAt = object.submittedAt ?? 0;
-    return message;
-  },
-};
-
-function createBaseFormSubmission_ValuesEntry(): FormSubmission_ValuesEntry {
-  return { key: "", value: undefined };
-}
-
-export const FormSubmission_ValuesEntry: MessageFns<FormSubmission_ValuesEntry> = {
-  encode(message: FormSubmission_ValuesEntry, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
-    if (message.key !== "") {
-      writer.uint32(10).string(message.key);
-    }
-    if (message.value !== undefined) {
-      FieldValue.encode(message.value, writer.uint32(18).fork()).join();
-    }
-    return writer;
-  },
-
-  decode(input: BinaryReader | Uint8Array, length?: number): FormSubmission_ValuesEntry {
-    const reader = input instanceof BinaryReader ? input : new BinaryReader(input);
-    const end = length === undefined ? reader.len : reader.pos + length;
-    const message = createBaseFormSubmission_ValuesEntry();
-    while (reader.pos < end) {
-      const tag = reader.uint32();
-      switch (tag >>> 3) {
-        case 1: {
-          if (tag !== 10) {
-            break;
-          }
-
-          message.key = reader.string();
-          continue;
-        }
-        case 2: {
-          if (tag !== 18) {
-            break;
-          }
-
-          message.value = FieldValue.decode(reader, reader.uint32());
-          continue;
-        }
-      }
-      if ((tag & 7) === 4 || tag === 0) {
-        break;
-      }
-      reader.skip(tag & 7);
-    }
-    return message;
-  },
-
-  fromJSON(object: any): FormSubmission_ValuesEntry {
-    return {
-      key: isSet(object.key) ? globalThis.String(object.key) : "",
-      value: isSet(object.value) ? FieldValue.fromJSON(object.value) : undefined,
-    };
-  },
-
-  toJSON(message: FormSubmission_ValuesEntry): unknown {
-    const obj: any = {};
-    if (message.key !== "") {
-      obj.key = message.key;
-    }
-    if (message.value !== undefined) {
-      obj.value = FieldValue.toJSON(message.value);
-    }
-    return obj;
-  },
-
-  create<I extends Exact<DeepPartial<FormSubmission_ValuesEntry>, I>>(base?: I): FormSubmission_ValuesEntry {
-    return FormSubmission_ValuesEntry.fromPartial(base ?? ({} as any));
-  },
-  fromPartial<I extends Exact<DeepPartial<FormSubmission_ValuesEntry>, I>>(object: I): FormSubmission_ValuesEntry {
-    const message = createBaseFormSubmission_ValuesEntry();
-    message.key = object.key ?? "";
-    message.value = (object.value !== undefined && object.value !== null)
-      ? FieldValue.fromPartial(object.value)
-      : undefined;
     return message;
   },
 };
 
 function createBaseFieldValue(): FieldValue {
   return {
+    fieldId: "",
     stringValue: undefined,
     integerValue: undefined,
     doubleValue: undefined,
@@ -1135,20 +1025,23 @@ function createBaseFieldValue(): FieldValue {
 
 export const FieldValue: MessageFns<FieldValue> = {
   encode(message: FieldValue, writer: BinaryWriter = new BinaryWriter()): BinaryWriter {
+    if (message.fieldId !== "") {
+      writer.uint32(10).string(message.fieldId);
+    }
     if (message.stringValue !== undefined) {
-      writer.uint32(10).string(message.stringValue);
+      writer.uint32(18).string(message.stringValue);
     }
     if (message.integerValue !== undefined) {
-      writer.uint32(16).int64(message.integerValue);
+      writer.uint32(24).int64(message.integerValue);
     }
     if (message.doubleValue !== undefined) {
-      writer.uint32(25).double(message.doubleValue);
+      writer.uint32(33).double(message.doubleValue);
     }
     if (message.boolValue !== undefined) {
-      writer.uint32(32).bool(message.boolValue);
+      writer.uint32(40).bool(message.boolValue);
     }
     if (message.bitmaskValue !== undefined) {
-      writer.uint32(40).uint64(message.bitmaskValue);
+      writer.uint32(48).uint64(message.bitmaskValue);
     }
     return writer;
   },
@@ -1165,35 +1058,43 @@ export const FieldValue: MessageFns<FieldValue> = {
             break;
           }
 
-          message.stringValue = reader.string();
+          message.fieldId = reader.string();
           continue;
         }
         case 2: {
-          if (tag !== 16) {
+          if (tag !== 18) {
+            break;
+          }
+
+          message.stringValue = reader.string();
+          continue;
+        }
+        case 3: {
+          if (tag !== 24) {
             break;
           }
 
           message.integerValue = longToNumber(reader.int64());
           continue;
         }
-        case 3: {
-          if (tag !== 25) {
+        case 4: {
+          if (tag !== 33) {
             break;
           }
 
           message.doubleValue = reader.double();
           continue;
         }
-        case 4: {
-          if (tag !== 32) {
+        case 5: {
+          if (tag !== 40) {
             break;
           }
 
           message.boolValue = reader.bool();
           continue;
         }
-        case 5: {
-          if (tag !== 40) {
+        case 6: {
+          if (tag !== 48) {
             break;
           }
 
@@ -1211,6 +1112,11 @@ export const FieldValue: MessageFns<FieldValue> = {
 
   fromJSON(object: any): FieldValue {
     return {
+      fieldId: isSet(object.fieldId)
+        ? globalThis.String(object.fieldId)
+        : isSet(object.field_id)
+        ? globalThis.String(object.field_id)
+        : "",
       stringValue: isSet(object.stringValue)
         ? globalThis.String(object.stringValue)
         : isSet(object.string_value)
@@ -1241,6 +1147,9 @@ export const FieldValue: MessageFns<FieldValue> = {
 
   toJSON(message: FieldValue): unknown {
     const obj: any = {};
+    if (message.fieldId !== "") {
+      obj.fieldId = message.fieldId;
+    }
     if (message.stringValue !== undefined) {
       obj.stringValue = message.stringValue;
     }
@@ -1264,6 +1173,7 @@ export const FieldValue: MessageFns<FieldValue> = {
   },
   fromPartial<I extends Exact<DeepPartial<FieldValue>, I>>(object: I): FieldValue {
     const message = createBaseFieldValue();
+    message.fieldId = object.fieldId ?? "";
     message.stringValue = object.stringValue ?? undefined;
     message.integerValue = object.integerValue ?? undefined;
     message.doubleValue = object.doubleValue ?? undefined;
@@ -1743,10 +1653,6 @@ function longToNumber(int64: { toString(): string }): number {
     throw new globalThis.Error("Value is smaller than Number.MIN_SAFE_INTEGER");
   }
   return num;
-}
-
-function isObject(value: any): boolean {
-  return typeof value === "object" && value !== null;
 }
 
 function isSet(value: any): boolean {

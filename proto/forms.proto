@@ -34,10 +34,10 @@ message Form {
     string owner = 7;
     repeated Field fields = 8;
     repeated string allowed_participants = 10;
-    repeated string mentioned_emails = 12;
     uint64 deadline = 13;
   
     message Field {
+        string id = 11;
         FieldType type = 1;
         string name = 2;
         string label = 3;
@@ -61,17 +61,18 @@ message Form {
 
 message FormSubmission {
     uint64 form_id = 1;
-    map<string, FieldValue> values = 2;
+    repeated FieldValue values = 2;
     uint64 submitted_at = 3;
 }
 
 message FieldValue {
+    string field_id = 1;
     oneof value {
-        string string_value = 1;
-        int64 integer_value = 2;
-        double double_value = 3;
-        bool bool_value = 4;
-        uint64 bitmask_value = 5;
+        string string_value = 2;
+        int64 integer_value = 3;
+        double double_value = 4;
+        bool bool_value = 5;
+        uint64 bitmask_value = 6;
     }
 }
 

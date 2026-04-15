@@ -10,8 +10,6 @@
 
 
 use std::borrow::Cow;
-use std::collections::HashMap;
-type KVMap<K, V> = HashMap<K, V>;
 use quick_protobuf::{MessageInfo, MessageRead, MessageWrite, BytesReader, Writer, WriterBackend, Result};
 use quick_protobuf::sizeofs::*;
 use super::*;
@@ -162,7 +160,6 @@ pub struct Form<'a> {
     pub owner: Cow<'a, str>,
     pub fields: Vec<mod_Form::Field<'a>>,
     pub allowed_participants: Vec<Cow<'a, str>>,
-    pub mentioned_emails: Vec<Cow<'a, str>>,
     pub deadline: u64,
 }
 
@@ -179,7 +176,6 @@ impl<'a> MessageRead<'a> for Form<'a> {
                 Ok(58) => msg.owner = r.read_string(bytes).map(Cow::Borrowed)?,
                 Ok(66) => msg.fields.push(r.read_message::<mod_Form::Field>(bytes)?),
                 Ok(82) => msg.allowed_participants.push(r.read_string(bytes).map(Cow::Borrowed)?),
-                Ok(98) => msg.mentioned_emails.push(r.read_string(bytes).map(Cow::Borrowed)?),
                 Ok(104) => msg.deadline = r.read_uint64(bytes)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
@@ -200,7 +196,6 @@ impl<'a> MessageWrite for Form<'a> {
         + if self.owner == "" { 0 } else { 1 + sizeof_len((&self.owner).len()) }
         + self.fields.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
         + self.allowed_participants.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
-        + self.mentioned_emails.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
         + if self.deadline == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.deadline) as u64) }
     }
 
@@ -213,7 +208,6 @@ impl<'a> MessageWrite for Form<'a> {
         if self.owner != "" { w.write_with_tag(58, |w| w.write_string(&**&self.owner))?; }
         for s in &self.fields { w.write_with_tag(66, |w| w.write_message(s))?; }
         for s in &self.allowed_participants { w.write_with_tag(82, |w| w.write_string(&**s))?; }
-        for s in &self.mentioned_emails { w.write_with_tag(98, |w| w.write_string(&**s))?; }
         if self.deadline != 0u64 { w.write_with_tag(104, |w| w.write_uint64(*&self.deadline))?; }
         Ok(())
     }
@@ -227,6 +221,7 @@ use super::*;
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Field<'a> {
+    pub id: Cow<'a, str>,
     pub type_pb: FieldType,
     pub name: Cow<'a, str>,
     pub label: Cow<'a, str>,
@@ -241,6 +236,7 @@ impl<'a> MessageRead<'a> for Field<'a> {
         let mut msg = Self::default();
         while !r.is_eof() {
             match r.next_tag(bytes) {
+                Ok(90) => msg.id = r.read_string(bytes).map(Cow::Borrowed)?,
                 Ok(8) => msg.type_pb = r.read_enum(bytes)?,
                 Ok(18) => msg.name = r.read_string(bytes).map(Cow::Borrowed)?,
                 Ok(26) => msg.label = r.read_string(bytes).map(Cow::Borrowed)?,
@@ -262,6 +258,7 @@ impl<'a> MessageRead<'a> for Field<'a> {
 impl<'a> MessageWrite for Field<'a> {
     fn get_size(&self) -> usize {
         0
+        + if self.id == "" { 0 } else { 1 + sizeof_len((&self.id).len()) }
         + if self.type_pb == forms::FieldType::TEXT { 0 } else { 1 + sizeof_varint(*(&self.type_pb) as u64) }
         + if self.name == "" { 0 } else { 1 + sizeof_len((&self.name).len()) }
         + if self.label == "" { 0 } else { 1 + sizeof_len((&self.label).len()) }
@@ -277,6 +274,7 @@ impl<'a> MessageWrite for Field<'a> {
     }    }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
+        if self.id != "" { w.write_with_tag(90, |w| w.write_string(&**&self.id))?; }
         if self.type_pb != forms::FieldType::TEXT { w.write_with_tag(8, |w| w.write_enum(*&self.type_pb as i32))?; }
         if self.name != "" { w.write_with_tag(18, |w| w.write_string(&**&self.name))?; }
         if self.label != "" { w.write_with_tag(26, |w| w.write_string(&**&self.label))?; }
@@ -359,7 +357,7 @@ impl MessageWrite for NumberConfig {
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct FormSubmission<'a> {
     pub form_id: u64,
-    pub values: KVMap<Cow<'a, str>, FieldValue<'a>>,
+    pub values: Vec<FieldValue<'a>>,
     pub submitted_at: u64,
 }
 
@@ -369,10 +367,7 @@ impl<'a> MessageRead<'a> for FormSubmission<'a> {
         while !r.is_eof() {
             match r.next_tag(bytes) {
                 Ok(8) => msg.form_id = r.read_uint64(bytes)?,
-                Ok(18) => {
-                    let (key, value) = r.read_map(bytes, |r, bytes| Ok(r.read_string(bytes).map(Cow::Borrowed)?), |r, bytes| Ok(r.read_message::<FieldValue>(bytes)?))?;
-                    msg.values.insert(key, value);
-                }
+                Ok(18) => msg.values.push(r.read_message::<FieldValue>(bytes)?),
                 Ok(24) => msg.submitted_at = r.read_uint64(bytes)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
@@ -386,13 +381,13 @@ impl<'a> MessageWrite for FormSubmission<'a> {
     fn get_size(&self) -> usize {
         0
         + if self.form_id == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.form_id) as u64) }
-        + self.values.iter().map(|(k, v)| 1 + sizeof_len(2 + sizeof_len((k).len()) + sizeof_len((v).get_size()))).sum::<usize>()
+        + self.values.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
         + if self.submitted_at == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.submitted_at) as u64) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
         if self.form_id != 0u64 { w.write_with_tag(8, |w| w.write_uint64(*&self.form_id))?; }
-        for (k, v) in self.values.iter() { w.write_with_tag(18, |w| w.write_map(2 + sizeof_len((k).len()) + sizeof_len((v).get_size()), 10, |w| w.write_string(&**k), 18, |w| w.write_message(v)))?; }
+        for s in &self.values { w.write_with_tag(18, |w| w.write_message(s))?; }
         if self.submitted_at != 0u64 { w.write_with_tag(24, |w| w.write_uint64(*&self.submitted_at))?; }
         Ok(())
     }
@@ -401,6 +396,7 @@ impl<'a> MessageWrite for FormSubmission<'a> {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct FieldValue<'a> {
+    pub field_id: Cow<'a, str>,
     pub value: mod_FieldValue::OneOfvalue<'a>,
 }
 
@@ -409,11 +405,12 @@ impl<'a> MessageRead<'a> for FieldValue<'a> {
         let mut msg = Self::default();
         while !r.is_eof() {
             match r.next_tag(bytes) {
-                Ok(10) => msg.value = mod_FieldValue::OneOfvalue::string_value(r.read_string(bytes).map(Cow::Borrowed)?),
-                Ok(16) => msg.value = mod_FieldValue::OneOfvalue::integer_value(r.read_int64(bytes)?),
-                Ok(25) => msg.value = mod_FieldValue::OneOfvalue::double_value(r.read_double(bytes)?),
-                Ok(32) => msg.value = mod_FieldValue::OneOfvalue::bool_value(r.read_bool(bytes)?),
-                Ok(40) => msg.value = mod_FieldValue::OneOfvalue::bitmask_value(r.read_uint64(bytes)?),
+                Ok(10) => msg.field_id = r.read_string(bytes).map(Cow::Borrowed)?,
+                Ok(18) => msg.value = mod_FieldValue::OneOfvalue::string_value(r.read_string(bytes).map(Cow::Borrowed)?),
+                Ok(24) => msg.value = mod_FieldValue::OneOfvalue::integer_value(r.read_int64(bytes)?),
+                Ok(33) => msg.value = mod_FieldValue::OneOfvalue::double_value(r.read_double(bytes)?),
+                Ok(40) => msg.value = mod_FieldValue::OneOfvalue::bool_value(r.read_bool(bytes)?),
+                Ok(48) => msg.value = mod_FieldValue::OneOfvalue::bitmask_value(r.read_uint64(bytes)?),
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -425,6 +422,7 @@ impl<'a> MessageRead<'a> for FieldValue<'a> {
 impl<'a> MessageWrite for FieldValue<'a> {
     fn get_size(&self) -> usize {
         0
+        + if self.field_id == "" { 0 } else { 1 + sizeof_len((&self.field_id).len()) }
         + match self.value {
             mod_FieldValue::OneOfvalue::string_value(ref m) => 1 + sizeof_len((m).len()),
             mod_FieldValue::OneOfvalue::integer_value(ref m) => 1 + sizeof_varint(*(m) as u64),
@@ -435,11 +433,12 @@ impl<'a> MessageWrite for FieldValue<'a> {
     }    }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
-        match self.value {            mod_FieldValue::OneOfvalue::string_value(ref m) => { w.write_with_tag(10, |w| w.write_string(&**m))? },
-            mod_FieldValue::OneOfvalue::integer_value(ref m) => { w.write_with_tag(16, |w| w.write_int64(*m))? },
-            mod_FieldValue::OneOfvalue::double_value(ref m) => { w.write_with_tag(25, |w| w.write_double(*m))? },
-            mod_FieldValue::OneOfvalue::bool_value(ref m) => { w.write_with_tag(32, |w| w.write_bool(*m))? },
-            mod_FieldValue::OneOfvalue::bitmask_value(ref m) => { w.write_with_tag(40, |w| w.write_uint64(*m))? },
+        if self.field_id != "" { w.write_with_tag(10, |w| w.write_string(&**&self.field_id))?; }
+        match self.value {            mod_FieldValue::OneOfvalue::string_value(ref m) => { w.write_with_tag(18, |w| w.write_string(&**m))? },
+            mod_FieldValue::OneOfvalue::integer_value(ref m) => { w.write_with_tag(24, |w| w.write_int64(*m))? },
+            mod_FieldValue::OneOfvalue::double_value(ref m) => { w.write_with_tag(33, |w| w.write_double(*m))? },
+            mod_FieldValue::OneOfvalue::bool_value(ref m) => { w.write_with_tag(40, |w| w.write_bool(*m))? },
+            mod_FieldValue::OneOfvalue::bitmask_value(ref m) => { w.write_with_tag(48, |w| w.write_uint64(*m))? },
             mod_FieldValue::OneOfvalue::None => {},
     }        Ok(())
     }

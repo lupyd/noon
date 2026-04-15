@@ -35,9 +35,8 @@ native-tls = "0.2"
 tokio-native-tls = "0.3"
 uuid = { version = "1", features = ["v4"] }
 jsonwebtoken = { version = "10.3.0", features = ["hmac", "rust_crypto"] }
+regex = "1.12.3"
 
-[dev-dependencies]
-noon-core = { path = "../core" }
 
 [build-dependencies]
 pb-rs = "0.10.0"

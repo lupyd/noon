@@ -3,6 +3,7 @@ use std::time::{Duration, SystemTime, UNIX_EPOCH};
 lazy_static::lazy_static! {
     pub static ref HTTP_CLIENT: reqwest::Client = reqwest::Client::new();
     pub static ref EMULATOR_MODE: bool = std::env::var("EMULATOR_MODE").map(|s| s == "true").unwrap_or(false);
+    pub static ref MAX_PARTICIPANTS: usize = std::env::var("MAX_PARTICIPANTS").ok().and_then(|s| s.parse().ok()).unwrap_or(10);
 }
 
 const BEARER_WORD: &str = "Bearer ";

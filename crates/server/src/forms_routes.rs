@@ -7,9 +7,7 @@ use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use crate::forms_db;
-use crate::pb::forms::{
-    BlindSubmission, Form, FormSubmission, OtpRequest, OtpVerify,
-};
+use crate::pb::forms::{BlindSubmission, Form, FormSubmission, OtpRequest, OtpVerify};
 use crate::shared_data::SharedData;
 use crate::{
     bad_request_response, build_response, internal_error_response, limit_and_collect,
@@ -77,8 +75,17 @@ async fn get_authorized_participant(
     let auth_header = headers.get(header::AUTHORIZATION)?;
     let auth_str = auth_header.to_str().unwrap_or("");
 
+    // In emulator/test mode, accept Bearer tokens directly as user identities
+    if *crate::utils::EMULATOR_MODE {
+        if let Some(username) = auth_str.strip_prefix("Bearer ") {
+            return Some(format!("user:{}", username));
+        }
+    }
+
     if let Some(token) = auth_str.strip_prefix("EmailOnly ") {
-        if let Ok((email, form_id)) = forms_db::verify_email_jwt(&sd.db, token).await {
+        if let Ok((email, form_id)) =
+            forms_db::verify_email_jwt(&sd.db, token, &sd.auth_iss, &sd.auth_aud).await
+        {
             if let Some(expected) = expected_form_id {
                 if let Some(token_form_id) = form_id {
                     if token_form_id != expected {
@@ -123,34 +130,106 @@ async fn create_form_route(
     // Only user:* can create forms? Or email:* too?
     // Let's allow both for now.
 
-    if form.allowed_participants.is_empty() && form.mentioned_emails.is_empty() {
+    if form.allowed_participants.is_empty() {
         return Ok(build_response(
             StatusCode::BAD_REQUEST,
-            "allowed_participants and mentioned_emails cannot be empty (anonymous forms require participants list)",
+            "allowed_participants cannot be empty (anonymous forms require participants list)",
         ));
+    }
+
+    let total_participants = form.allowed_participants.len();
+    let max = *crate::utils::MAX_PARTICIPANTS;
+    if total_participants > max {
+        return Ok(build_response(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Maximum number of participants allowed is {}. You have {}. Please contact contact@lupyd.com to increase your limit.",
+                max, total_participants
+            ),
+        ));
+    }
+
+    // Validate email format for mentioned_emails
+    let email_regex = regex::Regex::new(
+        r"^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$"
+    ).unwrap();
+
+    let invalid_emails: Vec<&str> = form
+        .allowed_participants
+        .iter()
+        .map(|e| e.as_ref())
+        .filter(|e| e.contains('@') && !email_regex.is_match(e))
+        .collect();
+
+    if !invalid_emails.is_empty() {
+        return Ok(build_response(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Invalid email{}: {}",
+                if invalid_emails.len() > 1 { "s" } else { "" },
+                invalid_emails.join(", ")
+            ),
+        ));
+    }
+
+    let mut ids = std::collections::HashSet::new();
+    for field in &form.fields {
+        if field.id.is_empty() {
+            return Ok(build_response(
+                StatusCode::BAD_REQUEST,
+                format!("Field '{}' is missing an ID", field.name),
+            ));
+        }
+        if !ids.insert(&field.id) {
+            return Ok(build_response(
+                StatusCode::BAD_REQUEST,
+                format!("Duplicate field ID: {}", field.id),
+            ));
+        }
     }
 
     match forms_db::create_form(&sd.db, form.clone(), owner.clone()).await {
         Ok(id) => {
             // Send emails to participants
-            let frontend_url = std::env::var("FRONTEND_URL").unwrap_or("http://localhost:5173".to_string());
-            let owner_display = owner.strip_prefix("email:")
+            let frontend_url =
+                std::env::var("FRONTEND_URL").unwrap_or("http://localhost:8080".to_string());
+            let owner_display = owner
+                .strip_prefix("email:")
                 .or_else(|| owner.strip_prefix("user:"))
                 .unwrap_or(&owner);
 
-            for email in &form.mentioned_emails {
-                if let Ok(token) = forms_db::generate_email_jwt(&sd.db, email, Some(id)).await {
-                    let form_link = format!("{}/forms/{}?token={}", frontend_url, id, token);
-                    if let Some(emailer) = &sd.emailer {
-                        if let Err(e) = emailer.send_form_invitation(email, &form.name, owner_display, &form_link) {
-                            log::error!("Failed to send invitation email to {}: {}", email, e);
+            for participant in &form.allowed_participants {
+                let p = participant.as_ref();
+                if p.contains('@') {
+                    if let Ok(token) = forms_db::generate_email_jwt(
+                        &sd.db,
+                        p,
+                        Some(id),
+                        sd.auth_iss.clone(),
+                        sd.auth_aud.clone(),
+                    )
+                    .await
+                    {
+                        let form_link = format!("{}/forms/{}?token={}", frontend_url, id, token);
+                        if let Some(emailer) = &sd.emailer {
+                            if let Err(e) = emailer.send_form_invitation(
+                                p,
+                                &form.name,
+                                owner_display,
+                                &form_link,
+                            ) {
+                                log::error!("Failed to send invitation email to {}: {}", p, e);
+                            }
+                        } else if sd.skip_email_sending {
+                            println!("--- EMAIL INVITATION ---");
+                            println!("To: {}", p);
+                            println!("Subject: Invitation to fill {}", form.name);
+                            println!(
+                                "Body: {} has invited you to fill out the form: {}\nDirect Link: {}",
+                                owner_display, form.name, form_link
+                            );
+                            println!("------------------------");
                         }
-                    } else if sd.skip_email_sending {
-                        println!("--- EMAIL INVITATION ---");
-                        println!("To: {}", email);
-                        println!("Subject: Invitation to fill {}", form.name);
-                        println!("Body: {} has invited you to fill out the form: {}\nDirect Link: {}", owner_display, form.name, form_link);
-                        println!("------------------------");
                     }
                 }
             }
@@ -197,7 +276,7 @@ async fn get_form_route(
         Ok(bytes) => {
             let mut reader = quick_protobuf::BytesReader::from_bytes(&bytes);
             let parsed_form = Form::from_reader(&mut reader, &bytes).unwrap_or_default();
-            
+
             if parsed_form.deadline > 0 {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
@@ -211,7 +290,7 @@ async fn get_form_route(
                 }
             }
             Ok(ok_response(bytes))
-        },
+        }
         Err(e) => {
             log::error!("get_form error: {:?}", e);
             Ok(not_found_response())
@@ -278,8 +357,7 @@ async fn blind_sign_route(
     };
 
     // Mark user as participated
-    match forms_db::check_and_mark_participant_accepted(&sd.db, form_id, &participant).await
-    {
+    match forms_db::check_and_mark_participant_accepted(&sd.db, form_id, &participant).await {
         Ok(true) => {}
         Ok(false) => {
             return Ok(build_response(
@@ -314,6 +392,16 @@ async fn submit_blind_route(
         // 5MB
         Ok(b) => b,
         Err(_) => return Ok(bad_request_response()),
+    };
+
+    let form_bytes = match forms_db::get_form_bytes(&sd.db, form_id).await {
+        Ok(b) => b,
+        Err(_) => return Ok(not_found_response()),
+    };
+    let mut reader_f = quick_protobuf::BytesReader::from_bytes(&form_bytes);
+    let parsed_form = match Form::from_reader(&mut reader_f, &form_bytes) {
+        Ok(f) => f,
+        Err(_) => return Ok(internal_error_response()),
     };
 
     let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
@@ -352,6 +440,149 @@ async fn submit_blind_route(
         Ok(s) => s,
         Err(_) => return Ok(bad_request_response()),
     };
+
+    // Validate submission values against form fields
+    for field in &parsed_form.fields {
+        let field_id: &str = &field.id;
+        match submission.values.iter().find(|v| v.field_id == field_id) {
+            None => {
+                if field.required && field.type_pb != crate::pb::forms::FieldType::CHECKBOX {
+                    return Ok(build_response(
+                        StatusCode::BAD_REQUEST,
+                        format!("Field '{}' is required", field.label.as_ref()),
+                    ));
+                }
+            }
+            Some(val) => {
+                use crate::pb::forms::mod_FieldValue::OneOfvalue as Value;
+                use crate::pb::forms::mod_Form::mod_Field::OneOfconfig as Config;
+
+                if field.required {
+                    let is_empty = match &val.value {
+                        Value::string_value(s) => s.trim().is_empty(),
+                        Value::None => true,
+                        // For checkboxes, required means it must be true
+                        Value::bool_value(b)
+                            if field.type_pb == crate::pb::forms::FieldType::CHECKBOX =>
+                        {
+                            !*b
+                        }
+                        _ => false,
+                    };
+                    if is_empty {
+                        return Ok(build_response(
+                            StatusCode::BAD_REQUEST,
+                            format!("Field '{}' is required", field.label.as_ref()),
+                        ));
+                    }
+                }
+
+                match &val.value {
+                    Value::string_value(_) => {
+                        use crate::pb::forms::FieldType as FT;
+                        if !matches!(
+                            field.type_pb,
+                            FT::TEXT
+                                | FT::TEXTAREA
+                                | FT::SELECT
+                                | FT::RADIO
+                                | FT::DATE
+                                | FT::TIME
+                                | FT::EMAIL
+                                | FT::URL
+                        ) {
+                            return Ok(build_response(
+                                StatusCode::BAD_REQUEST,
+                                format!("Field '{}' expects a string value", field.label.as_ref()),
+                            ));
+                        }
+                    }
+                    Value::double_value(_) => {
+                        if field.type_pb != crate::pb::forms::FieldType::NUMBER {
+                            return Ok(build_response(
+                                StatusCode::BAD_REQUEST,
+                                format!("Field '{}' expects a number value", field.label.as_ref()),
+                            ));
+                        }
+                    }
+                    Value::bool_value(_) => {
+                        if field.type_pb != crate::pb::forms::FieldType::CHECKBOX {
+                            return Ok(build_response(
+                                StatusCode::BAD_REQUEST,
+                                format!("Field '{}' expects a boolean value", field.label.as_ref()),
+                            ));
+                        }
+                    }
+                    Value::bitmask_value(_) => {
+                        if field.type_pb != crate::pb::forms::FieldType::MULTI_SELECT {
+                            return Ok(build_response(
+                                StatusCode::BAD_REQUEST,
+                                format!("Field '{}' expects a bitmask value", field.label.as_ref()),
+                            ));
+                        }
+                    }
+                    Value::integer_value(_) => {
+                        // Integer value is currently unused by frontend but allowed for completeness if we add appropriate types
+                    }
+                    Value::None => {
+                        if field.required {
+                            return Ok(build_response(StatusCode::BAD_REQUEST, format!("Field '{}' is required", field.label.as_ref())));
+                        }
+                    }
+                }
+
+                match &val.value {
+                    Value::string_value(s) => {
+                        if let Config::max_length(ml) = field.config {
+                            if ml > 0 && s.len() > ml as usize {
+                                return Ok(build_response(
+                                    StatusCode::BAD_REQUEST,
+                                    format!(
+                                        "Field '{}' exceeds maximum length of {}",
+                                        field.label.as_ref(),
+                                        ml
+                                    ),
+                                ));
+                            }
+                        }
+                        if let Config::pattern(p) = &field.config {
+                            if !p.is_empty() {
+                                if let Ok(re) = regex::Regex::new(p.as_ref()) {
+                                    if !s.is_empty() && !re.is_match(s.as_ref()) {
+                                        return Ok(build_response(
+                                            StatusCode::BAD_REQUEST,
+                                            format!(
+                                                "Field '{}' has invalid format",
+                                                field.label.as_ref()
+                                            ),
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    Value::double_value(d) => {
+                        if let Config::number_config(nc) = &field.config {
+                            if nc.min != 0.0 || nc.max != 0.0 {
+                                if *d < nc.min || *d > nc.max {
+                                    return Ok(build_response(
+                                        StatusCode::BAD_REQUEST,
+                                        format!(
+                                            "Field '{}' is out of allowed range ({} - {})",
+                                            field.label.as_ref(),
+                                            nc.min,
+                                            nc.max
+                                        ),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
 
     submission.form_id = form_id;
 
@@ -423,20 +654,25 @@ async fn get_results_route(
     for sub_bytes in subs_bytes {
         // FormResults has field 1 as repeated FormSubmission (tag 10)
         writer.write_tag(10).expect("Failed to write tag");
-        writer.write_bytes(&sub_bytes).expect("Failed to write bytes");
+        writer
+            .write_bytes(&sub_bytes)
+            .expect("Failed to write bytes");
     }
 
     // Tag 18: Form form (tag 2, length delimited)
     writer.write_tag(18).expect("Failed to write tag");
-    writer.write_bytes(&form_bytes).expect("Failed to write bytes");
+    writer
+        .write_bytes(&form_bytes)
+        .expect("Failed to write bytes");
 
     // Tag 24: uint64 total_submissions (tag 3, varint)
     writer.write_tag(24).expect("Failed to write tag");
-    writer.write_uint64(total_count).expect("Failed to write uint64");
+    writer
+        .write_uint64(total_count)
+        .expect("Failed to write uint64");
 
     Ok(ok_response(out))
 }
-
 
 async fn list_my_forms_route(
     req: Request<Incoming>,
@@ -451,12 +687,14 @@ async fn list_my_forms_route(
         Ok(forms_bytes) => {
             let mut out = Vec::new();
             let mut writer = quick_protobuf::Writer::new(&mut out);
-            
+
             for form_bytes in forms_bytes {
                 // UserForms has field 1 as repeated Form
                 // Tag 10
                 writer.write_tag(10).expect("Failed to write tag");
-                writer.write_bytes(&form_bytes).expect("Failed to write bytes");
+                writer
+                    .write_bytes(&form_bytes)
+                    .expect("Failed to write bytes");
             }
 
             Ok(ok_response(out))
@@ -467,7 +705,6 @@ async fn list_my_forms_route(
         }
     }
 }
-
 
 async fn request_otp_route(
     req: Request<Incoming>,
@@ -484,7 +721,11 @@ async fn request_otp_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
-    let form_id = if otp_request.form_id == 0 { None } else { Some(otp_request.form_id) };
+    let form_id = if otp_request.form_id == 0 {
+        None
+    } else {
+        Some(otp_request.form_id)
+    };
     common_request_otp(otp_request.email.to_string(), form_id, sd).await
 }
 
@@ -503,7 +744,11 @@ async fn verify_otp_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
-    let form_id = if otp_verify.form_id == 0 { None } else { Some(otp_verify.form_id) };
+    let form_id = if otp_verify.form_id == 0 {
+        None
+    } else {
+        Some(otp_verify.form_id)
+    };
     common_verify_otp(
         otp_verify.email.to_string(),
         otp_verify.code.to_string(),
@@ -528,10 +773,11 @@ async fn common_request_otp(
         let mut reader = quick_protobuf::BytesReader::from_bytes(&form_bytes);
         let parsed_form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
 
+        let email_prefixed = format!("email:{}", email);
         if !parsed_form
-            .mentioned_emails
+            .allowed_participants
             .iter()
-            .any(|e| e.as_ref() == email)
+            .any(|e| e.as_ref() == email || e.as_ref() == email_prefixed)
         {
             return Ok(build_response(
                 StatusCode::FORBIDDEN,
@@ -575,7 +821,15 @@ async fn common_verify_otp(
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     match forms_db::verify_otp(&sd.db, &email, &code, form_id).await {
         Ok(true) => {
-            match forms_db::generate_email_jwt(&sd.db, &email, form_id).await {
+            match forms_db::generate_email_jwt(
+                &sd.db,
+                &email,
+                form_id,
+                sd.auth_iss.clone(),
+                sd.auth_aud.clone(),
+            )
+            .await
+            {
                 Ok(token) => Ok(ok_response(token)),
                 Err(e) => {
                     log::error!("generate_email_jwt error: {:?}", e);
@@ -593,4 +847,3 @@ async fn common_verify_otp(
         }
     }
 }
-

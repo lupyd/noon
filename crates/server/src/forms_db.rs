@@ -1,14 +1,14 @@
 use anyhow::Context;
 use deadpool_postgres::Pool;
+use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use noon_core::blind::BlindSigner;
 use quick_protobuf::{MessageRead, MessageWrite};
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
-use std::time::{SystemTime, UNIX_EPOCH};
-use jsonwebtoken::{encode, decode, Header, Algorithm, Validation, EncodingKey, DecodingKey};
 use serde::{Deserialize, Serialize};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-use crate::pb::forms::{Form, FormSubmission};
 use crate::otp::generate_otp;
+use crate::pb::forms::{Form, FormSubmission};
 
 pub async fn get_or_create_blind_signer(pool: &Pool) -> anyhow::Result<BlindSigner> {
     let client = pool.get().await?;
@@ -46,9 +46,17 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
     let mut writer = quick_protobuf::Writer::new(&mut out);
     form.write_message(&mut writer)?;
 
-    let mentioned_emails: Vec<&str> = form.mentioned_emails.iter().map(|s| s.as_ref()).collect();
+    let allowed_participants: Vec<&str> = form
+        .allowed_participants
+        .iter()
+        .map(|s| s.as_ref())
+        .collect();
 
-    let deadline = if form.deadline == 0 { None } else { Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(form.deadline)) };
+    let deadline = if form.deadline == 0 {
+        None
+    } else {
+        Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(form.deadline))
+    };
 
     let stmt = "INSERT INTO forms (name, description, owner, fields, mentioned_emails, deadline) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id";
     let row = client
@@ -59,7 +67,7 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
                 &form.description.to_string(),
                 &owner,
                 &out,
-                &mentioned_emails,
+                &allowed_participants,
                 &deadline,
             ],
         )
@@ -70,15 +78,14 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
 
     for participant in &form.allowed_participants {
         let stmt = "INSERT INTO form_allowed_participants (form_id, participant) VALUES ($1, $2) ON CONFLICT DO NOTHING";
+        let part_str = participant.as_ref();
+        let formatted_participant = if part_str.contains('@') {
+            format!("email:{}", part_str)
+        } else {
+            format!("user:{}", part_str)
+        };
         client
-            .execute(stmt, &[&form_id, &format!("user:{}", participant)])
-            .await?;
-    }
-
-    for email in &form.mentioned_emails {
-        let stmt = "INSERT INTO form_allowed_participants (form_id, participant) VALUES ($1, $2) ON CONFLICT DO NOTHING";
-        client
-            .execute(stmt, &[&form_id, &format!("email:{}", email)])
+            .execute(stmt, &[&form_id, &formatted_participant])
             .await?;
     }
 
@@ -106,7 +113,7 @@ pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>
     form.description = description.into();
     form.owner = owner.into();
     form.created_at = created_at as u64;
-    form.mentioned_emails = mentioned_emails.into_iter().map(|s| s.into()).collect();
+    form.allowed_participants = mentioned_emails.into_iter().map(|s| s.into()).collect();
     form.deadline = deadline.unwrap_or(0) as u64;
 
     let rows = client
@@ -163,10 +170,7 @@ pub async fn submit_form(pool: &Pool, submission: FormSubmission<'_>) -> anyhow:
     client
         .execute(
             "INSERT INTO form_submissions (form_id, data) VALUES ($1, $2)",
-            &[
-                &(submission.form_id as i64),
-                &out,
-            ],
+            &[&(submission.form_id as i64), &out],
         )
         .await?;
 
@@ -198,7 +202,7 @@ pub async fn get_forms_by_owner(pool: &Pool, owner: &str) -> anyhow::Result<Vec<
             &[&owner],
         )
         .await?;
-    
+
     let mut results = Vec::new();
     for row in rows {
         let id: i64 = row.get(0);
@@ -206,23 +210,22 @@ pub async fn get_forms_by_owner(pool: &Pool, owner: &str) -> anyhow::Result<Vec<
         let description: String = row.get(2);
         let created_at: i64 = row.get(3);
         let deadline: Option<i64> = row.get(4);
-        
+
         let mut form = Form::default();
         form.id = id as u64;
         form.name = name.into();
         form.description = description.into();
         form.created_at = created_at as u64;
         form.deadline = deadline.unwrap_or(0) as u64;
-        
+
         let mut out = Vec::new();
         let mut writer = quick_protobuf::Writer::new(&mut out);
         form.write_message(&mut writer)?;
         results.push(out);
     }
-    
+
     Ok(results)
 }
-
 
 pub async fn create_otp(pool: &Pool, email: &str, form_id: Option<u64>) -> anyhow::Result<String> {
     let client = pool.get().await?;
@@ -245,7 +248,12 @@ pub async fn create_otp(pool: &Pool, email: &str, form_id: Option<u64>) -> anyho
     Ok(code)
 }
 
-pub async fn verify_otp(pool: &Pool, email: &str, code: &str, form_id: Option<u64>) -> anyhow::Result<bool> {
+pub async fn verify_otp(
+    pool: &Pool,
+    email: &str,
+    code: &str,
+    form_id: Option<u64>,
+) -> anyhow::Result<bool> {
     let client = pool.get().await?;
 
     let now = SystemTime::now()
@@ -282,7 +290,6 @@ pub async fn verify_otp(pool: &Pool, email: &str, code: &str, form_id: Option<u6
     Ok(false)
 }
 
-
 pub async fn is_participant_allowed(
     pool: &Pool,
     form_id: u64,
@@ -305,6 +312,8 @@ pub struct EmailClaims {
     pub sub: String, // email
     pub exp: usize,
     pub iat: usize,
+    pub iss: String,
+    pub aud: String,
     pub form_id: Option<u64>,
 }
 
@@ -321,12 +330,12 @@ pub async fn get_jwt_secret(pool: &Pool) -> anyhow::Result<Vec<u8>> {
         let key_data: Vec<u8> = row.get(0);
         let created_at: SystemTime = row.get(1);
         let now = SystemTime::now();
-        
+
         // Rotate every 24 hours for security (can be adjusted)
         if now.duration_since(created_at).unwrap_or_default().as_secs() > 3600 * 24 {
             return rotate_jwt_secret(pool).await;
         }
-        
+
         Ok(key_data)
     } else {
         rotate_jwt_secret(pool).await
@@ -343,17 +352,25 @@ pub async fn rotate_jwt_secret(pool: &Pool) -> anyhow::Result<Vec<u8>> {
     Ok(key)
 }
 
-pub async fn generate_email_jwt(pool: &Pool, email: &str, form_id: Option<u64>) -> anyhow::Result<String> {
+pub async fn generate_email_jwt(
+    pool: &Pool,
+    email: &str,
+    form_id: Option<u64>,
+    iss: String,
+    aud: String,
+) -> anyhow::Result<String> {
     let secret = get_jwt_secret(pool).await?;
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs() as usize;
-    
+
     let claims = EmailClaims {
         sub: email.to_string(),
         exp: now + 3600 * 24 * 7, // 7 days
         iat: now,
+        iss,
+        aud,
         form_id,
     };
 
@@ -366,20 +383,29 @@ pub async fn generate_email_jwt(pool: &Pool, email: &str, form_id: Option<u64>) 
     Ok(token)
 }
 
-pub async fn verify_email_jwt(pool: &Pool, token: &str) -> anyhow::Result<(String, Option<u64>)> {
+pub async fn verify_email_jwt(
+    pool: &Pool,
+    token: &str,
+    iss: &str,
+    aud: &str,
+) -> anyhow::Result<(String, Option<u64>)> {
     let client = pool.get().await?;
     let rows = client
-        .query("SELECT key_data FROM secrets ORDER BY created_at DESC", &[])
+        .query(
+            "SELECT key_data FROM secrets ORDER BY created_at DESC LIMIT 3",
+            &[],
+        )
         .await?;
 
     for row in rows {
         let secret: Vec<u8> = row.get(0);
-        let validation = Validation::new(Algorithm::HS256);
-        if let Ok(token_data) = decode::<EmailClaims>(
-            token,
-            &DecodingKey::from_secret(&secret),
-            &validation,
-        ) {
+        let mut validation = Validation::new(Algorithm::HS256);
+        validation.set_issuer(&[iss]);
+        validation.set_audience(&[aud]);
+
+        if let Ok(token_data) =
+            decode::<EmailClaims>(token, &DecodingKey::from_secret(&secret), &validation)
+        {
             return Ok((token_data.claims.sub, token_data.claims.form_id));
         }
     }

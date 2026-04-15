@@ -11,6 +11,8 @@ pub struct SharedData {
     pub db: deadpool_postgres::Pool,
     pub emailer: Option<Emailer>,
     pub skip_email_sending: bool,
+    pub auth_iss: String,
+    pub auth_aud: String,
 }
 
 impl SharedData {
@@ -42,10 +44,15 @@ impl SharedData {
             }
         };
 
+        let auth_iss = var("AUTH_ISS").unwrap_or_else(|_| "noon.lupyd.com".to_string());
+        let auth_aud = var("AUTH_AUD").unwrap_or_else(|_| "noon-api".to_string());
+
         Self {
             db: pool,
             emailer,
             skip_email_sending,
+            auth_iss,
+            auth_aud,
         }
     }
 }

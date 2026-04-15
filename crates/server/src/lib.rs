@@ -8,7 +8,6 @@ use hyper_util::rt::TokioIo;
 pub mod email;
 pub mod forms_db;
 pub mod forms_routes;
-pub mod lupyd_token;
 pub mod otp;
 pub mod pb;
 pub mod shared_data;

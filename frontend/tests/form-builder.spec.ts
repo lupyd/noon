@@ -40,8 +40,8 @@ test.describe('Form Builder', () => {
     await expect(page.getByRole('heading', { name: 'Create New Form' })).toBeVisible();
     
     // Test adding a field
-    await page.getByRole('button', { name: 'Add New Field' }).click();
-    await expect(page.getByText('1 Fields')).toBeVisible();
+    await page.getByRole('button', { name: 'Add Field' }).click();
+    await expect(page.getByText('Label *')).toBeVisible();
     
     // Test filling form details
     await page.getByPlaceholder('e.g. Q2 Performance Review').fill('Test Form');

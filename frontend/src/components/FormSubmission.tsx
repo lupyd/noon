@@ -73,11 +73,13 @@ export const FormSubmission: React.FC = () => {
       const initialValues: Record<string, FieldValue> = {};
       decoded.fields.forEach((field) => {
         if (field.type === FieldType.CHECKBOX) {
-          initialValues[field.name] = { boolValue: false };
+          initialValues[field.id] = { fieldId: field.id, boolValue: false };
         } else if (field.type === FieldType.NUMBER) {
-          initialValues[field.name] = { doubleValue: 0 };
+          initialValues[field.id] = { fieldId: field.id, doubleValue: 0 };
+        } else if (field.type === FieldType.MULTI_SELECT) {
+          initialValues[field.id] = { fieldId: field.id, bitmaskValue: 0 };
         } else {
-          initialValues[field.name] = { stringValue: '' };
+          initialValues[field.id] = { fieldId: field.id, stringValue: '' };
         }
       });
       setValues(initialValues);
@@ -103,10 +105,10 @@ export const FormSubmission: React.FC = () => {
     fetchForm();
   }, [id, isAuthenticated, token]);
 
-  const handleInputChange = (fieldName: string, value: string | number | boolean, type: keyof FieldValue) => {
+  const handleInputChange = (fieldId: string, value: string | number | boolean, type: keyof FieldValue) => {
     setValues(prev => ({
       ...prev,
-      [fieldName]: { [type]: value }
+      [fieldId]: { ...prev[fieldId], fieldId, [type]: value }
     }));
   };
 
@@ -163,9 +165,20 @@ export const FormSubmission: React.FC = () => {
     setIsSubmitting(true);
     setError(null);
 
+    for (const field of form?.fields || []) {
+      if (field.required && field.type === FieldType.MULTI_SELECT) {
+        const val = values[field.id]?.bitmaskValue || 0;
+        if (val === 0) {
+          setError(`Field "${field.label}" is required.`);
+          setIsSubmitting(false);
+          return;
+        }
+      }
+    }
+
     const submissionPayload = {
       formId: parseInt(id!),
-      values: values,
+      values: Object.values(values),
       submittedAt: Date.now(),
     };
 
@@ -311,7 +324,7 @@ export const FormSubmission: React.FC = () => {
                   required
                 />
               </div>
-              <p className="help-text" style={{ marginTop: '1rem' }}>Enter the 6-digit code sent to {userEmail}. <br/><strong>Check your spam folder if it doesn't arrive.</strong></p>
+              <p className="help-text" style={{ marginTop: '1rem' }}>Enter the 6-digit code sent to {userEmail}. <br /><strong>Check your spam folder if it doesn't arrive.</strong></p>
             </div>
             <button
               type="submit"
@@ -337,10 +350,10 @@ export const FormSubmission: React.FC = () => {
           <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)' }}><Shield size={12} /> Verified Session</span>
         </div>
         <h1 style={{ fontSize: '4.5rem', fontWeight: 900, marginBottom: '0.5rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
-        <p className="owner-mention" style={{ fontSize: '1rem', color: 'var(--accent)', marginBottom: '1.5rem', fontWeight: 600 }}>By {form?.owner?.replace('email:', '').replace('user:', '')}</p>
-        <p className="description text-muted" style={{ fontSize: '1.25rem', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>{form?.description ?? ''}</p>
+        <p className="owner-mention" style={{ fontSize: '1rem', marginBottom: '1.5rem', fontWeight: 600 }}>By {form?.owner?.replace('email:', '').replace('user:', '')}</p>
+        <p className="description text-muted" style={{ fontSize: '1.25rem', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>{form == null ? '' : form.description}</p>
 
-        {form?.deadline && form.deadline > 0 && (
+        {form != null && form.deadline > 0 && (
           <div style={{ marginTop: '2rem' }}>
             <span className="badge" style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)', color: 'var(--error)' }}>
               Deadline: {new Date(Number(form.deadline) * 1000).toLocaleString()}
@@ -349,53 +362,108 @@ export const FormSubmission: React.FC = () => {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="submission-fields" style={{ maxWidth: '800px', margin: '0 auto' }}>
+      <form onSubmit={handleSubmit} className="submission-fields" style={{ maxWidth: '600px', margin: '0 auto' }}>
         {form?.fields.map((field, index: number) => (
-          <div key={field.name} className="form-group card animate-fade-in" style={{ padding: '2.5rem' }}>
+          <div key={field.id} className="form-group card animate-fade-in" style={{ padding: '1.5rem 2rem' }}>
             <label style={{ fontSize: '0.875rem', marginBottom: '1.5rem', fontWeight: 800, color: 'var(--text)', display: 'flex', justifyContent: 'space-between' }}>
               <span>{field.label} {field.required && <span style={{ color: 'var(--error)' }}>*</span>}</span>
               <span style={{ opacity: 0.3, fontWeight: 400 }}>0{index + 1}</span>
             </label>
 
             <div className="input-wrapper">
-              {field.type === FieldType.TEXTAREA ? ( // TEXTAREA
+              {field.type === FieldType.TEXTAREA ? (
                 <textarea
                   placeholder={field.placeholder || "Your detailed response..."}
                   required={field.required}
-                  onChange={(e) => handleInputChange(field.name, e.target.value, 'stringValue')}
+                  onChange={(e) => handleInputChange(field.id, e.target.value, 'stringValue')}
                   rows={4}
                   style={{ resize: 'vertical' }}
+                  maxLength={field.maxLength || undefined}
                 />
-              ) : field.type === FieldType.NUMBER ? ( // NUMBER
+              ) : field.type === FieldType.NUMBER ? (
                 <input
                   type="number"
                   placeholder={field.placeholder || "0.00"}
                   required={field.required}
-                  onChange={(e) => handleInputChange(field.name, parseFloat(e.target.value), 'doubleValue')}
+                  onChange={(e) => handleInputChange(field.id, parseFloat(e.target.value), 'doubleValue')}
+                  min={field.numberConfig?.min || undefined}
+                  max={field.numberConfig?.max || undefined}
+                  step={field.numberConfig?.step || undefined}
                 />
-              ) : field.type === FieldType.CHECKBOX ? ( // CHECKBOX
-                <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', padding: '0.5rem 0' }}>
+              ) : field.type === FieldType.CHECKBOX ? (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', padding: '0.25rem 0' }}>
                   <input
                     type="checkbox"
-                    id={`check-${field.name}`}
+                    id={`check-${field.id}`}
                     required={field.required}
-                    onChange={(e) => handleInputChange(field.name, e.target.checked, 'boolValue')}
-                    style={{ width: '1.5rem', height: '1.5rem', cursor: 'pointer' }}
+                    onChange={(e) => handleInputChange(field.id, e.target.checked, 'boolValue')}
+                    style={{ width: '1.25rem', height: '1.25rem', cursor: 'pointer' }}
                   />
-                  <label htmlFor={`check-${field.name}`} style={{ margin: 0, textTransform: 'none', letterSpacing: 0, fontWeight: 400, cursor: 'pointer', color: 'var(--text)' }}>
+                  <label htmlFor={`check-${field.id}`} style={{ margin: 0, textTransform: 'none', letterSpacing: 0, fontWeight: 400, cursor: 'pointer', color: 'var(--text)' }}>
                     I acknowledge and confirm this data point.
                   </label>
                 </div>
+              ) : field.type === FieldType.RADIO ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.5rem 0' }}>
+                  {field.selectOptions?.options.map((opt: any) => (
+                    <div key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="radio"
+                        name={field.id}
+                        value={opt.value}
+                        id={`radio-${field.id}-${opt.value}`}
+                        required={field.required}
+                        onChange={(e) => handleInputChange(field.id, e.target.value, 'stringValue')}
+                        style={{ width: '1.25rem', height: '1.25rem', cursor: 'pointer' }}
+                      />
+                      <label htmlFor={`radio-${field.id}-${opt.value}`} style={{ margin: 0, fontWeight: 400, cursor: 'pointer' }}>{opt.label}</label>
+                    </div>
+                  ))}
+                </div>
+              ) : field.type === FieldType.SELECT ? (
+                <select
+                  required={field.required}
+                  onChange={(e) => handleInputChange(field.id, e.target.value, 'stringValue')}
+                  style={{ width: '100%', padding: '0.75rem', borderRadius: '6px', border: '1px solid var(--border)', background: 'var(--bg)', color: 'var(--text)' }}
+                >
+                  <option value="">{field.placeholder || "Select an option..."}</option>
+                  {field.selectOptions?.options.map((opt: any) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              ) : field.type === FieldType.MULTI_SELECT ? (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', padding: '0.5rem 0' }}>
+                  {field.selectOptions?.options.map((opt: any) => (
+                    <div key={opt.value} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <input
+                        type="checkbox"
+                        value={opt.value}
+                        id={`multi-${field.id}-${opt.value}`}
+                        onChange={(e) => {
+                          const currentBitmask = values[field.id]?.bitmaskValue || 0;
+                          const newBitmask = e.target.checked
+                            ? currentBitmask | (1 << opt.bit)
+                            : currentBitmask & ~(1 << opt.bit);
+                          handleInputChange(field.id, newBitmask, 'bitmaskValue');
+                        }}
+                        style={{ width: '1.25rem', height: '1.25rem', cursor: 'pointer' }}
+                      />
+                      <label htmlFor={`multi-${field.id}-${opt.value}`} style={{ margin: 0, fontWeight: 400, cursor: 'pointer' }}>{opt.label}</label>
+                    </div>
+                  ))}
+                </div>
               ) : (
                 <input
-                  type={field.type === FieldType.EMAIL ? 'email' : field.type === FieldType.URL ? 'url' : 'text'}
+                  type={field.type === FieldType.EMAIL ? 'email' : field.type === FieldType.URL ? 'url' : field.type === FieldType.DATE ? 'date' : field.type === FieldType.TIME ? 'time' : 'text'}
                   placeholder={field.placeholder || "Type your answer here..."}
                   required={field.required}
-                  onChange={(e) => handleInputChange(field.name, e.target.value, 'stringValue')}
+                  onChange={(e) => handleInputChange(field.id, e.target.value, 'stringValue')}
+                  maxLength={field.maxLength || undefined}
+                  pattern={field.pattern || undefined}
                 />
               )}
             </div>
-            {field.helpText && <p className="help-text" style={{ marginTop: '1.25rem', fontSize: '0.875rem', opacity: 0.6 }}>{field.helpText}</p>}
+            {field.helpText && <p className="help-text" style={{ marginTop: '0.75rem', fontSize: '0.875rem', opacity: 0.8 }}>{field.helpText}</p>}
           </div>
         ))}
 
@@ -409,7 +477,7 @@ export const FormSubmission: React.FC = () => {
             {isSubmitting ? 'Encrypting Payload...' : <><Send size={20} /> Submit Response</>}
           </button>
           <p className="text-muted" style={{ marginTop: '1.5rem', fontSize: '0.875rem' }}>
-            Responses are end-to-end encrypted and immutable once sent.
+            Responses are immutable once sent.
           </p>
         </div>
       </form>

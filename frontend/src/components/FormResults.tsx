@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { useParams, Link, useSearchParams } from 'react-router-dom';
-import { 
-  decodeFormResults, 
-  type FormType, 
-  type FormResultsType 
+import {
+  decodeFormResults,
+  type FormType,
+  type FormResultsType
 } from '../proto';
 import { useUnifiedAuth } from '../auth';
 import { Table as TableIcon, Download, ArrowLeft, Loader2, AlertCircle, ChevronLeft, ChevronRight } from 'lucide-react';
@@ -13,10 +13,11 @@ export const FormResults: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const [searchParams, setSearchParams] = useSearchParams();
   const { isAuthenticated, isInitialLoading, getAuthHeaders, clearEmailAuth } = useUnifiedAuth();
-  
+
   const [form, setForm] = useState<FormType | null>(null);
   const [results, setResults] = useState<FormResultsType | null>(null);
   const [loading, setLoading] = useState(true);
+  const [exporting, setExporting] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const page = parseInt(searchParams.get('page') || '1');
@@ -25,11 +26,11 @@ export const FormResults: React.FC = () => {
 
   const fetchData = async () => {
     if (isInitialLoading) return;
-    
+
     if (!isAuthenticated) {
-        setError("Please log in or verify email to view results.");
-        setLoading(false);
-        return;
+      setError("Please log in or verify email to view results.");
+      setLoading(false);
+      return;
     }
 
     setLoading(true);
@@ -39,18 +40,18 @@ export const FormResults: React.FC = () => {
 
       // Fetch Results (includes form definition and total count)
       const resultsRes = await fetch(`${API_URL}/forms/${id}/results?limit=${limit}&offset=${offset}`, { headers });
-      
+
       if (resultsRes.status === 401) {
-          clearEmailAuth();
-          throw new Error("Session expired. Please re-verify your email.");
+        clearEmailAuth();
+        throw new Error("Session expired. Please re-verify your email.");
       }
-      
+
       if (resultsRes.status === 403) throw new Error("Access denied. Only the creator can see results.");
       if (!resultsRes.ok) throw new Error("Failed to fetch results.");
-      
+
       const resultsBuffer = await resultsRes.arrayBuffer();
       const decodedResults = decodeFormResults(new Uint8Array(resultsBuffer));
-      
+
       setResults(decodedResults);
       if (decodedResults.form) {
         setForm(decodedResults.form);
@@ -66,12 +67,20 @@ export const FormResults: React.FC = () => {
     fetchData();
   }, [id, isAuthenticated, isInitialLoading, page]);
 
-  const formatValue = (valueObj: any) => {
+  const formatValue = (valueObj: any, field: any) => {
     if (!valueObj) return '-';
+
+    if (field.type === 4 && valueObj.bitmaskValue !== undefined) { // 4 is FieldType.MULTI_SELECT
+      if (!field.selectOptions || !field.selectOptions.options) return valueObj.bitmaskValue.toString();
+      const selected = field.selectOptions.options.filter((opt: any) => (valueObj.bitmaskValue & (1 << opt.bit)) !== 0);
+      return selected.map((o: any) => o.label).join(', ') || '-';
+    }
+
     if (valueObj.stringValue !== undefined) return valueObj.stringValue;
     if (valueObj.integerValue !== undefined) return valueObj.integerValue.toString();
     if (valueObj.doubleValue !== undefined) return valueObj.doubleValue.toString();
     if (valueObj.boolValue !== undefined) return valueObj.boolValue ? 'Yes' : 'No';
+    if (valueObj.bitmaskValue !== undefined) return valueObj.bitmaskValue.toString();
     return '-';
   };
 
@@ -79,6 +88,53 @@ export const FormResults: React.FC = () => {
 
   const handlePageChange = (newPage: number) => {
     setSearchParams({ page: newPage.toString() });
+  };
+
+  const handleExportJSON = async () => {
+    if (!isAuthenticated || !form) return;
+    setExporting(true);
+    try {
+      const headers = await getAuthHeaders();
+      const res = await fetch(`${API_URL}/forms/${id}/results?limit=1000000&offset=0`, { headers });
+      if (!res.ok) throw new Error("Failed to fetch data for export.");
+
+      const resultsBuffer = await res.arrayBuffer();
+      const decodedResults = decodeFormResults(new Uint8Array(resultsBuffer));
+
+      const exportData = {
+        form: {
+          id: form.id,
+          name: form.name,
+          description: form.description,
+          owner: form.owner,
+          createdAt: new Date(Number(form.createdAt)).toLocaleString(),
+        },
+        submissions: decodedResults.submissions.map(sub => {
+          const mappedSub: Record<string, string> = {
+            "Submitted At": new Date(Number(sub.submittedAt)).toLocaleString()
+          };
+          form.fields.forEach(field => {
+            const val = sub.values.find(v => v.fieldId === field.id);
+            mappedSub[field.label] = formatValue(val, field);
+          });
+          return mappedSub;
+        })
+      };
+
+      const blob = new Blob([JSON.stringify(exportData, null, 2)], { type: 'application/json' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${form.name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase()}_results.json`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Failed to export: " + (err as Error).message);
+    } finally {
+      setExporting(false);
+    }
   };
 
   if (loading) return (
@@ -109,15 +165,21 @@ export const FormResults: React.FC = () => {
             <h1 style={{ fontSize: '4rem', fontWeight: 900, marginBottom: '1rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
             <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
               <p className="text-muted" style={{ fontSize: '1.25rem' }}>{Number(results?.totalSubmissions) || 0} secure submissions received</p>
-              {form?.deadline && form.deadline > 0 && (
+              {((form != null && form!.deadline > 0)) && (
                 <span className="badge" style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)', color: 'var(--error)', fontSize: '0.875rem' }}>
-                  Deadline: {new Date(Number(form.deadline) * 1000).toLocaleString()}
+                  Deadline: {new Date(Number(form!.deadline) * 1000).toLocaleString()}
                 </span>
               )}
             </div>
           </div>
-          <button className="secondary-button" onClick={() => window.print()} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-            <Download size={18} /> Export Data
+          <button
+            className="secondary-button"
+            onClick={handleExportJSON}
+            disabled={exporting}
+            style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}
+          >
+            {exporting ? <Loader2 size={18} style={{ animation: 'spin 2s linear infinite' }} /> : <Download size={18} />}
+            {exporting ? 'Exporting...' : 'Export JSON'}
           </button>
         </div>
       </div>
@@ -128,7 +190,7 @@ export const FormResults: React.FC = () => {
             <tr style={{ background: 'rgba(255,255,255,0.03)', borderBottom: '1px solid var(--border)' }}>
               <th style={{ padding: '1.5rem 2rem', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>Timestamp</th>
               {form?.fields.map(field => (
-                <th key={field.name} style={{ padding: '1.5rem 2rem', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
+                <th key={field.id} style={{ padding: '1.5rem 2rem', fontSize: '0.75rem', fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: 'var(--text-muted)' }}>
                   {field.label}
                 </th>
               ))}
@@ -140,20 +202,23 @@ export const FormResults: React.FC = () => {
                 <td style={{ padding: '1.5rem 2rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
                   {new Date(Number(submission.submittedAt)).toLocaleString()}
                 </td>
-                {form?.fields.map(field => (
-                  <td key={field.name} style={{ padding: '1.5rem 2rem', fontSize: '1rem', fontWeight: 500 }}>
-                    {formatValue(submission.values[field.name])}
-                  </td>
-                ))}
+                {form?.fields.map(field => {
+                  const fieldValue = submission.values.find(v => v.fieldId === field.id);
+                  return (
+                    <td key={field.id} style={{ padding: '1.5rem 2rem', fontSize: '1rem', fontWeight: 500 }}>
+                      {formatValue(fieldValue, field)}
+                    </td>
+                  );
+                })}
               </tr>
             ))}
             {(!results || results.submissions.length === 0) && (
               <tr>
                 <td colSpan={(form?.fields.length || 0) + 1} style={{ padding: '6rem', textAlign: 'center', color: 'var(--text-muted)' }}>
-                    <div style={{ marginBottom: '1.5rem', opacity: 0.2 }}>
-                        <TableIcon size={64} style={{ margin: '0 auto' }} />
-                    </div>
-                    No data points collected yet.
+                  <div style={{ marginBottom: '1.5rem', opacity: 0.2 }}>
+                    <TableIcon size={64} style={{ margin: '0 auto' }} />
+                  </div>
+                  No data points collected yet.
                 </td>
               </tr>
             )}
@@ -163,8 +228,8 @@ export const FormResults: React.FC = () => {
 
       {totalPages > 1 && (
         <div className="pagination" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '2rem', marginTop: '4rem' }}>
-          <button 
-            className="secondary-button" 
+          <button
+            className="secondary-button"
             disabled={page === 1}
             onClick={() => handlePageChange(page - 1)}
             style={{ padding: '0.75rem 1.5rem' }}
@@ -174,8 +239,8 @@ export const FormResults: React.FC = () => {
           <span style={{ fontWeight: 700, color: 'var(--text)' }}>
             Page <span style={{ color: 'var(--accent)' }}>{page}</span> of {totalPages}
           </span>
-          <button 
-            className="secondary-button" 
+          <button
+            className="secondary-button"
             disabled={page === totalPages}
             onClick={() => handlePageChange(page + 1)}
             style={{ padding: '0.75rem 1.5rem' }}
@@ -184,7 +249,7 @@ export const FormResults: React.FC = () => {
           </button>
         </div>
       )}
-      
+
       <style>{`
         .result-row:hover { background: rgba(255,255,255,0.02); }
         th { white-space: nowrap; }
