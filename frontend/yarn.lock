@@ -2,31 +2,6 @@
 # yarn lockfile v1
 
 
-"@auth0/auth0-auth-js@1.6.0":
-  version "1.6.0"
-  resolved "https://registry.npmjs.org/@auth0/auth0-auth-js/-/auth0-auth-js-1.6.0.tgz"
-  integrity sha512-/WYYNlsqhWA6I60pMVLFVeOgjOUCLdJThEAsjN8pAgYY09BTxbPaRIEVDgGu6ckoJpkmKvEYlHPO/vwRNrvX6w==
-  dependencies:
-    jose "^6.0.8"
-    openid-client "^6.8.0"
-
-"@auth0/auth0-react@^2.16.0":
-  version "2.16.1"
-  resolved "https://registry.npmjs.org/@auth0/auth0-react/-/auth0-react-2.16.1.tgz"
-  integrity sha512-YT6ngVDh3MV5ey2zhzXVQdLN0gQQCGzvykGtQVGY49Bky/NCB/Os6sXPhqqdsoTB07umYY9Uu54GowqwUSO4sw==
-  dependencies:
-    "@auth0/auth0-spa-js" "^2.18.0"
-
-"@auth0/auth0-spa-js@^2.18.0":
-  version "2.19.1"
-  resolved "https://registry.npmjs.org/@auth0/auth0-spa-js/-/auth0-spa-js-2.19.1.tgz"
-  integrity sha512-AlqK6ketzdn4+mBc37GV0QppLbXJ7DI4dUN53RAhX4/0NO3Xx1kBjPO1SwyEG/0jl9qYJi79Y1OR44n2FC7pgg==
-  dependencies:
-    "@auth0/auth0-auth-js" "1.6.0"
-    browser-tabs-lock "1.3.0"
-    dpop "2.1.1"
-    es-cookie "1.3.2"
-
 "@babel/code-frame@^7.28.6", "@babel/code-frame@^7.29.0":
   version "7.29.0"
   resolved "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.0.tgz"
@@ -634,13 +609,6 @@ brace-expansion@^5.0.5:
   dependencies:
     balanced-match "^4.0.2"
 
-browser-tabs-lock@1.3.0:
-  version "1.3.0"
-  resolved "https://registry.npmjs.org/browser-tabs-lock/-/browser-tabs-lock-1.3.0.tgz"
-  integrity sha512-g6nHaobTiT0eMZ7jh16YpD2kcjAp+PInbiVq3M1x6KKaEIVhT4v9oURNIpZLOZ3LQbQ3XYfNhMAb/9hzNLIWrw==
-  dependencies:
-    lodash ">=4.17.21"
-
 browserslist@^4.24.0, "browserslist@>= 4.21.0":
   version "4.28.2"
   resolved "https://registry.npmjs.org/browserslist/-/browserslist-4.28.2.tgz"
@@ -738,11 +706,6 @@ detect-libc@^2.0.3:
   resolved "https://registry.npmjs.org/detect-libc/-/detect-libc-2.1.2.tgz"
   integrity sha512-Btj2BOOO83o3WyH59e8MgXsxEQVcarkUOpEYrubB0urwnN10yQ364rsiByU11nZlqWYZm05i/of7io4mzihBtQ==
 
-dpop@2.1.1:
-  version "2.1.1"
-  resolved "https://registry.npmjs.org/dpop/-/dpop-2.1.1.tgz"
-  integrity sha512-J0Of2JTiM4h5si0tlbPQ/lkqfZ5wAEVkKYBhkwyyANnPJfWH4VsR5uIkZ+T+OSPIwDYUg1fbd5Mmodd25HjY1w==
-
 dprint-node@^1.0.8:
   version "1.0.8"
   resolved "https://registry.npmjs.org/dprint-node/-/dprint-node-1.0.8.tgz"
@@ -754,11 +717,6 @@ electron-to-chromium@^1.5.328:
   version "1.5.336"
   resolved "https://registry.npmjs.org/electron-to-chromium/-/electron-to-chromium-1.5.336.tgz"
   integrity sha512-AbH9q9J455r/nLmdNZes0G0ZKcRX73FicwowalLs6ijwOmCJSRRrLX63lcAlzy9ux3dWK1w1+1nsBJEWN11hcQ==
-
-es-cookie@1.3.2:
-  version "1.3.2"
-  resolved "https://registry.npmjs.org/es-cookie/-/es-cookie-1.3.2.tgz"
-  integrity sha512-UTlYYhXGLOy05P/vKVT2Ui7WtC7NiRzGtJyAKKn32g5Gvcjn7KAClLPWlipCtxIus934dFg9o9jXiBL0nP+t9Q==
 
 escalade@^3.2.0:
   version "3.2.0"
@@ -1018,11 +976,6 @@ isexe@^2.0.0:
   resolved "https://registry.npmjs.org/isexe/-/isexe-2.0.0.tgz"
   integrity sha512-RHxMLp9lnKHGHRng9QFhRCMbYAcVpn69smSGcq3f36xjgVVWThj4qqLbTLlq7Ssj8B+fIQ1EuCEGI2lKsyQeIw==
 
-jose@^6.0.8, jose@^6.2.2:
-  version "6.2.2"
-  resolved "https://registry.npmjs.org/jose/-/jose-6.2.2.tgz"
-  integrity sha512-d7kPDd34KO/YnzaDOlikGpOurfF0ByC2sEV4cANCtdqLlTfBlw2p14O/5d/zv40gJPbIQxfES3nSx1/oYNyuZQ==
-
 js-tokens@^4.0.0:
   version "4.0.0"
   resolved "https://registry.npmjs.org/js-tokens/-/js-tokens-4.0.0.tgz"
@@ -1111,11 +1064,6 @@ lodash.merge@^4.6.2:
   resolved "https://registry.npmjs.org/lodash.merge/-/lodash.merge-4.6.2.tgz"
   integrity sha512-0KpjqXRVvrYyCsX1swR/XTK0va6VQkQM6MNo7PqW77ByjAhoARA8EfrP1N4+KlKj8YS0ZUCtRT/YUuhyYDujIQ==
 
-lodash@>=4.17.21:
-  version "4.18.1"
-  resolved "https://registry.npmjs.org/lodash/-/lodash-4.18.1.tgz"
-  integrity sha512-dMInicTPVE8d1e5otfwmmjlxkZoUpiVLwyeTdUsi/Caj/gfzzblBcCE5sRHV/AsjuCmxWrte2TNGSYuCeCq+0Q==
-
 long@^5.0.0:
   version "5.3.2"
   resolved "https://registry.npmjs.org/long/-/long-5.3.2.tgz"
@@ -1178,19 +1126,6 @@ node-releases@^2.0.36:
   version "2.0.37"
   resolved "https://registry.npmjs.org/node-releases/-/node-releases-2.0.37.tgz"
   integrity sha512-1h5gKZCF+pO/o3Iqt5Jp7wc9rH3eJJ0+nh/CIoiRwjRxde/hAHyLPXYN4V3CqKAbiZPSeJFSWHmJsbkicta0Eg==
-
-oauth4webapi@^3.8.5:
-  version "3.8.5"
-  resolved "https://registry.npmjs.org/oauth4webapi/-/oauth4webapi-3.8.5.tgz"
-  integrity sha512-A8jmyUckVhRJj5lspguklcl90Ydqk61H3dcU0oLhH3Yv13KpAliKTt5hknpGGPZSSfOwGyraNEFmofDYH+1kSg==
-
-openid-client@^6.8.0:
-  version "6.8.3"
-  resolved "https://registry.npmjs.org/openid-client/-/openid-client-6.8.3.tgz"
-  integrity sha512-AoY/NaN9esS3+xvHInFSK0g3skSfeE0uqQAKRj4rB6/GsBIvzwTUaYo9+HcqpKIaP0dP85p5W07hayKgS4GAeA==
-  dependencies:
-    jose "^6.2.2"
-    oauth4webapi "^3.8.5"
 
 optionator@^0.9.3:
   version "0.9.4"
@@ -1301,7 +1236,7 @@ punycode@^2.1.0:
   resolved "https://registry.npmjs.org/punycode/-/punycode-2.3.1.tgz"
   integrity sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==
 
-"react-dom@^16.11.0 || ^17 || ^18 || ~19.0.1 || ~19.1.2 || ^19.2.1", "react-dom@^18.0.0 || ^19.0.0", react-dom@^19.2.0, react-dom@>=18:
+"react-dom@^18.0.0 || ^19.0.0", react-dom@^19.2.0, react-dom@>=18:
   version "19.2.5"
   resolved "https://registry.npmjs.org/react-dom/-/react-dom-19.2.5.tgz"
   integrity sha512-J5bAZz+DXMMwW/wV3xzKke59Af6CHY7G4uYLN1OvBcKEsWOs4pQExj86BBKamxl/Ik5bx9whOrvBlSDfWzgSag==
@@ -1328,7 +1263,7 @@ react-router@7.14.1:
     cookie "^1.0.1"
     set-cookie-parser "^2.6.0"
 
-"react@^16.11.0 || ^17 || ^18 || ~19.0.1 || ~19.1.2 || ^19.2.1", "react@^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0", "react@^18.0.0 || ^19.0.0", react@^19.2.0, react@^19.2.5, react@>=18:
+"react@^16.5.1 || ^17.0.0 || ^18.0.0 || ^19.0.0", "react@^18.0.0 || ^19.0.0", react@^19.2.0, react@^19.2.5, react@>=18:
   version "19.2.5"
   resolved "https://registry.npmjs.org/react/-/react-19.2.5.tgz"
   integrity sha512-llUJLzz1zTUBrskt2pwZgLq59AemifIftw4aB7JxOqf1HY2FDaGDxgwpAPVzHU1kdWabH7FauP4i1oEeer2WCA==
