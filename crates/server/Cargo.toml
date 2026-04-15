@@ -19,14 +19,14 @@ quick-protobuf = "0.8.1"
 rand = "0.8"
 reqwest = { version = "0.13.2", default-features = false, features = ["json", "rustls"] }
 ring = "0.17.14"
-rustls = "0.23.36"
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
 rustls-pemfile = "2.2.0"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1.0.149"
 thiserror = "2.0.18"
 tokio = { version = "1.49.0", features = ["full"] }
 tokio-postgres = { version = "0.7", features = ["with-serde_json-1"] }
-tokio-postgres-rustls = "0.13.0"
+tokio-postgres-rustls = { version = "0.13.0" }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 noon-core = { path = "../core" }
 rsa = { version = "0.9.10", features = ["sha2"] }
