@@ -48,6 +48,17 @@ export default defineConfig(({ mode }) => {
         'react/jsx-runtime': 'preact/jsx-runtime'
       }
     },
+    build: {
+      rollupOptions: {
+        output: {
+          manualChunks: (id) => {
+            if (id.includes('lucide-react')) {
+              return 'lucide';
+            }
+          }
+        }
+      }
+    },
     server: {
       port: 8080
     }

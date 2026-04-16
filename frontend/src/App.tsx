@@ -1,15 +1,22 @@
-import { useState } from 'react';
+import { useState, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
-import { FormBuilder } from './components/FormBuilder';
-import { FormSubmission } from './components/FormSubmission';
-import { FormResults } from './components/FormResults';
-import { Dashboard } from './components/Dashboard';
-import { LogOut } from 'lucide-react';
+import { LogOut, Loader2 } from 'lucide-react';
 import { SunLogo } from './components/logo';
 import { UnifiedAuthProvider, useUnifiedAuth } from './auth';
 import { ThemeProvider } from './ThemeContext';
 import { ThemeToggle } from './components/ThemeToggle';
 import './App.css';
+
+const FormBuilder = lazy(() => import('./components/FormBuilder').then(m => ({ default: m.FormBuilder })));
+const FormSubmission = lazy(() => import('./components/FormSubmission').then(m => ({ default: m.FormSubmission })));
+const FormResults = lazy(() => import('./components/FormResults').then(m => ({ default: m.FormResults })));
+const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
+
+const PageLoader = () => (
+  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '40vh' }}>
+    <Loader2 className="spinner" size={32} style={{ color: 'var(--accent)', animation: 'spin 2s linear infinite' }} />
+  </div>
+);
 
 function Home() {
   const [targetId, setTargetId] = useState('');
@@ -127,15 +134,16 @@ function App() {
             </header>
 
             <main className="container main-content">
-              <Routes>
-                <Route path="/" element={<Home />} />
-                <Route path="/index.html" element={<Navigate to="/" replace />} />
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/create" element={<FormBuilder />} />
-                <Route path="/forms/:id" element={<FormSubmission />} />
-                <Route path="/forms/:id/results" element={<FormResults />} />
-              </Routes>
-
+              <Suspense fallback={<PageLoader />}>
+                <Routes>
+                  <Route path="/" element={<Home />} />
+                  <Route path="/index.html" element={<Navigate to="/" replace />} />
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/create" element={<FormBuilder />} />
+                  <Route path="/forms/:id" element={<FormSubmission />} />
+                  <Route path="/forms/:id/results" element={<FormResults />} />
+                </Routes>
+              </Suspense>
             </main>
 
             <footer className="footer">

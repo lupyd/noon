@@ -1497,9 +1497,9 @@ react-refresh@^0.18.0:
   resolved "https://registry.npmjs.org/react-refresh/-/react-refresh-0.18.0.tgz"
   integrity sha512-QgT5//D3jfjJb6Gsjxv0Slpj23ip+HtOpnNgnb2S5zU3CB26G/IDPGoy4RJB42wzFE46DRsstbW6tKHoKbhAxw==
 
-react-router-dom@^7.13.2:
+react-router-dom@^7.14.1:
   version "7.14.1"
-  resolved "https://registry.npmjs.org/react-router-dom/-/react-router-dom-7.14.1.tgz"
+  resolved "https://registry.yarnpkg.com/react-router-dom/-/react-router-dom-7.14.1.tgz#1ead5007f8948b6eae6df84e95cc109911ad5d7c"
   integrity sha512-ZkrQuwwhGibjQLqH1eCdyiZyLWglPxzxdl5tgwgKEyCSGC76vmAjleGocRe3J/MLfzMUIKwaFJWpFVJhK3d2xA==
   dependencies:
     react-router "7.14.1"
