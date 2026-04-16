@@ -3,6 +3,7 @@ use noon_server::start_http_server;
 #[tokio::main]
 async fn main() {
     println!("Noon Server v{}", env!("CARGO_PKG_VERSION"));
+    rustls::crypto::ring::default_provider().install_default().expect("Failed to install rustls crypto provider");
 
     if let Err(err) = dotenv::dotenv() {
         eprintln!("failed to load dotenv {}", err);

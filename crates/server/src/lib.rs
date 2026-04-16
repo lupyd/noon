@@ -19,6 +19,7 @@ pub async fn start_http_server(port: u16) -> Result<(), anyhow::Error> {
     let addr: SocketAddr = ([0, 0, 0, 0], port).into();
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    log::info!("Server listening on http://{}", addr);
 
     let sd = Arc::new(SharedData::new());
 
