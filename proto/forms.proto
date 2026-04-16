@@ -91,6 +91,7 @@ message BlindSubmission {
     bytes payload = 1;
     bytes signature = 2;
     bytes submission = 3; // Encoded FormSubmission
+    bytes nonce = 4;
 }
 
 message FormResults {

@@ -548,6 +548,7 @@ pub struct BlindSubmission<'a> {
     pub payload: Cow<'a, [u8]>,
     pub signature: Cow<'a, [u8]>,
     pub submission: Cow<'a, [u8]>,
+    pub nonce: Cow<'a, [u8]>,
 }
 
 impl<'a> MessageRead<'a> for BlindSubmission<'a> {
@@ -558,6 +559,7 @@ impl<'a> MessageRead<'a> for BlindSubmission<'a> {
                 Ok(10) => msg.payload = r.read_bytes(bytes).map(Cow::Borrowed)?,
                 Ok(18) => msg.signature = r.read_bytes(bytes).map(Cow::Borrowed)?,
                 Ok(26) => msg.submission = r.read_bytes(bytes).map(Cow::Borrowed)?,
+                Ok(34) => msg.nonce = r.read_bytes(bytes).map(Cow::Borrowed)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -572,12 +574,14 @@ impl<'a> MessageWrite for BlindSubmission<'a> {
         + if self.payload == Cow::Borrowed(b"") { 0 } else { 1 + sizeof_len((&self.payload).len()) }
         + if self.signature == Cow::Borrowed(b"") { 0 } else { 1 + sizeof_len((&self.signature).len()) }
         + if self.submission == Cow::Borrowed(b"") { 0 } else { 1 + sizeof_len((&self.submission).len()) }
+        + if self.nonce == Cow::Borrowed(b"") { 0 } else { 1 + sizeof_len((&self.nonce).len()) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
         if self.payload != Cow::Borrowed(b"") { w.write_with_tag(10, |w| w.write_bytes(&**&self.payload))?; }
         if self.signature != Cow::Borrowed(b"") { w.write_with_tag(18, |w| w.write_bytes(&**&self.signature))?; }
         if self.submission != Cow::Borrowed(b"") { w.write_with_tag(26, |w| w.write_bytes(&**&self.submission))?; }
+        if self.nonce != Cow::Borrowed(b"") { w.write_with_tag(34, |w| w.write_bytes(&**&self.nonce))?; }
         Ok(())
     }
 }

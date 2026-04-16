@@ -4,13 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 
-[profile.release]
-strip = true
-opt-level = 3
-panic = "abort"
-lto = true
-codegen-units = 1
-
 
 [dependencies]
 anyhow = "1.0.102"
@@ -44,6 +37,7 @@ lettre = { version = "0.11", default-features = false, features = ["tokio1-rustl
 uuid = { version = "1", features = ["v4"] }
 jsonwebtoken = { version = "10.3.0", features = ["hmac", "rust_crypto"] }
 regex = "1.12.3"
+sha2 = "0.10.8"
 
 
 [build-dependencies]

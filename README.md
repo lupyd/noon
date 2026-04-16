@@ -66,15 +66,33 @@ npm run dev
 
 ## Configuration
 
+### Backend (Rust)
+
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `DB_CONN_STR` | Yes | - | PostgreSQL connection string |
-| `SMTP_HOST` | No | - | SMTP server for OTP emails |
-| `SMTP_USER` | No | - | SMTP username |
-| `SMTP_PASS` | No | - | SMTP password |
-| `PORT` | No | `39210` | Server port |
-| `EMULATOR_MODE` | No | `false` | Enable emulator features |
-| `NO_TOKEN_VERIFICATION` | No | `false` | Skip JWT verification (dev only) |
+| `DB_CONN_STR` | **Yes** | - | PostgreSQL connection string |
+| `DB_POOL_SIZE` | No | `100` | Database connection pool size |
+| `DB_CERT` | No | - | Path to SSL certificate for DB |
+| `PORT` | No | `39210` | API server port |
+| `RUST_LOG` | No | `info` | Logging level (`debug`, `info`, `warn`, `error`) |
+| `AUTH_ISS` | No | `noon.lupyd.com` | JWT Issuer for email authentication |
+| `AUTH_AUD` | No | `noon-api` | JWT Audience for email authentication |
+| `FRONTEND_URL` | No | `http://localhost:8080` | Base URL of the frontend (used in emails) |
+| `MAX_PARTICIPANTS` | No | `10` | Maximum participants per form |
+| `SKIP_EMAIL_SENDING` | No | `false` | If `true`, emails are logged to console instead of sent |
+| `SMTP_HOST` | No* | - | SMTP server address (Required if `SKIP_EMAIL_SENDING=false`) |
+| `SMTP_USERNAME` | No* | - | SMTP username (Required if `SKIP_EMAIL_SENDING=false`) |
+| `SMTP_PASSWORD` | No* | - | SMTP password (Required if `SKIP_EMAIL_SENDING=false`) |
+| `SMTP_FROM` | No* | - | "From" email address (Required if `SKIP_EMAIL_SENDING=false`) |
+| `SMTP_POOL_SIZE` | No | `4` | Number of concurrent email workers |
+| `EMULATOR_MODE` | No | `false` | Enable testing features |
+
+### Frontend (Vite)
+
+| Variable | Required | Default | Description |
+|----------|----------|---------|-------------|
+| `VITE_NOON_API_URL` | **Yes** | `http://localhost:39210` | Backend API URL |
+| `VITE_MAX_PARTICIPANTS`| No | `10` | UI limit for participant list |
 
 ## API Endpoints
 
@@ -90,11 +108,21 @@ npm run dev
 
 ## Blind Signature Flow
 
-1. Client blinds form data with server's public key
-2. Server signs blind data without seeing content
-3. Client unblinds signature
-4. Client submits form with unblinded signature
-5. Server verifies signature without learning submission content
+1. **Identity Verification**: Client authenticates via Email OTP to receive a short-lived token.
+2. **Blinding**: Client generates a secret message and blinds it with the server's public key.
+3. **Authorized Signing**: Server signs the blinded message only if the client has a valid token (without seeing the content).
+4. **Unblinding**: Client unblinds the signature to get a valid RSA signature for the original message.
+5. **Anonymous Submission**: Client submits the form response and the unblinded signature via an unauthenticated request.
+6. **Verification**: Server verifies the signature using its public key, ensuring authenticity while remaining "blind" to the submitter's identity.
+
+For a deep dive into the cryptography and anonymity guarantees, see [ARTICLE.md](./ARTICLE.md).
+
+## Anonymity Considerations
+
+While Noon uses strong cryptography, true anonymity in a web environment is challenging due to network-level linkability (IP addresses) and browser fingerprinting. For maximum privacy, we recommend:
+- Using different network paths for the signing and submission steps (e.g., submitting via Tor).
+- Avoiding browser-based submissions for extremely sensitive data.
+- See the "Making it Better" section in [ARTICLE.md](./ARTICLE.md) for future improvements like proxying and dedicated apps.
 
 ## License
 

@@ -183,7 +183,17 @@ export const FormSubmission: React.FC = () => {
     };
 
     try {
-      const encoded = encodeFormSubmission(submissionPayload);
+      const encodedSubmission = encodeFormSubmission(submissionPayload);
+      const nonce = new Uint8Array(16);
+      window.crypto.getRandomValues(nonce);
+
+      // Bind submission to signature via hashing: SHA256(submission | nonce)
+      const combined = new Uint8Array(encodedSubmission.length + nonce.length);
+      combined.set(encodedSubmission);
+      combined.set(nonce, encodedSubmission.length);
+
+      const hashBuffer = await window.crypto.subtle.digest('SHA-256', combined);
+      const hashBytes = new Uint8Array(hashBuffer);
 
       const pkRes = await fetch(`${API_URL}/forms/${id}/public_key`);
       if (!pkRes.ok) throw new Error("Failed to fetch public key");
@@ -192,9 +202,7 @@ export const FormSubmission: React.FC = () => {
       const publicN = mycrypto.bytesToBigIntLE(mycrypto.base64ToBytes(pubNBase64));
       const publicE = mycrypto.bytesToBigIntLE(mycrypto.base64ToBytes(pubEBase64));
 
-      const payloadBytes = new Uint8Array(32);
-      window.crypto.getRandomValues(payloadBytes);
-      const mBig = mycrypto.bytesToBigIntLE(payloadBytes);
+      const mBig = mycrypto.bytesToBigIntLE(hashBytes);
 
       let r = 0n;
       while (true) {
@@ -226,9 +234,10 @@ export const FormSubmission: React.FC = () => {
       const signatureBytes = mycrypto.bigIntToBytesLE(s);
 
       const blindSubmission = {
-        payload: payloadBytes,
         signature: signatureBytes,
-        submission: encoded,
+        submission: encodedSubmission,
+        nonce: nonce,
+        payload: hashBytes, // Optional, but kept for compatibility with proto if field exists
       };
 
       const submitRes = await fetch(`${API_URL}/forms/${id}/submit`, {

@@ -16,6 +16,10 @@ fn serialize_proto<T: MessageWrite>(msg: &T) -> Vec<u8> {
 }
 
 async fn setup_test_server(port: u16) -> String {
+    let _ = tracing_subscriber::fmt()
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+        .try_init();
+
     unsafe {
         std::env::set_var("NO_TOKEN_VERIFICATION", "true");
         std::env::set_var(
@@ -89,11 +93,22 @@ async fn submit_form_blind(
     let e = rsa::BigUint::from_bytes_le(&e_bytes);
     let public_key = rsa::RsaPublicKey::new(n, e).expect("Failed to create public key");
 
-    // 2. Prepare payload
-    let payload = vec![1, 2, 3, 4];
+    // 2. Prepare submission and nonce
+    let submission_bytes = serialize_proto(submission);
+    let mut nonce = vec![0u8; 16];
+    rand::RngCore::fill_bytes(&mut rand::rngs::OsRng, &mut nonce);
+
+    // 3. Hash: SHA256(submission | nonce)
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(&submission_bytes);
+    hasher.update(&nonce);
+    let payload = hasher.finalize().to_vec();
+
+    // 4. Blind the hash
     let blinded = create_blinded_message(&payload, &public_key);
 
-    // 3. Request blind signature
+    // 5. Request blind signature
     let sign_res = client
         .post(format!("{}/forms/{}/blind_sign", base_url, form_id))
         .header("Authorization", format!("{} {}", auth_prefix, auth_token))
@@ -109,12 +124,12 @@ async fn submit_form_blind(
     let blinded_sig = sign_res.bytes().await.unwrap();
     let signature = unblind_signature(&blinded, &blinded_sig, &public_key);
 
-    // 4. Submit
-    let submission_bytes = serialize_proto(submission);
+    // 6. Submit
     let mut blind_sub = BlindSubmission::default();
     blind_sub.payload = Cow::Owned(payload);
     blind_sub.signature = Cow::Owned(signature);
     blind_sub.submission = Cow::Owned(submission_bytes);
+    blind_sub.nonce = Cow::Owned(nonce);
 
     let submit_res = client
         .post(format!("{}/forms/{}/submit", base_url, form_id))

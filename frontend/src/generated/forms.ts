@@ -174,6 +174,7 @@ export interface BlindSubmission {
   signature: Uint8Array;
   /** Encoded FormSubmission */
   submission: Uint8Array;
+  nonce: Uint8Array;
 }
 
 export interface FormResults {
@@ -1360,7 +1361,12 @@ export const OtpVerify: MessageFns<OtpVerify> = {
 };
 
 function createBaseBlindSubmission(): BlindSubmission {
-  return { payload: new Uint8Array(0), signature: new Uint8Array(0), submission: new Uint8Array(0) };
+  return {
+    payload: new Uint8Array(0),
+    signature: new Uint8Array(0),
+    submission: new Uint8Array(0),
+    nonce: new Uint8Array(0),
+  };
 }
 
 export const BlindSubmission: MessageFns<BlindSubmission> = {
@@ -1373,6 +1379,9 @@ export const BlindSubmission: MessageFns<BlindSubmission> = {
     }
     if (message.submission.length !== 0) {
       writer.uint32(26).bytes(message.submission);
+    }
+    if (message.nonce.length !== 0) {
+      writer.uint32(34).bytes(message.nonce);
     }
     return writer;
   },
@@ -1408,6 +1417,14 @@ export const BlindSubmission: MessageFns<BlindSubmission> = {
           message.submission = reader.bytes();
           continue;
         }
+        case 4: {
+          if (tag !== 34) {
+            break;
+          }
+
+          message.nonce = reader.bytes();
+          continue;
+        }
       }
       if ((tag & 7) === 4 || tag === 0) {
         break;
@@ -1422,6 +1439,7 @@ export const BlindSubmission: MessageFns<BlindSubmission> = {
       payload: isSet(object.payload) ? bytesFromBase64(object.payload) : new Uint8Array(0),
       signature: isSet(object.signature) ? bytesFromBase64(object.signature) : new Uint8Array(0),
       submission: isSet(object.submission) ? bytesFromBase64(object.submission) : new Uint8Array(0),
+      nonce: isSet(object.nonce) ? bytesFromBase64(object.nonce) : new Uint8Array(0),
     };
   },
 
@@ -1436,6 +1454,9 @@ export const BlindSubmission: MessageFns<BlindSubmission> = {
     if (message.submission.length !== 0) {
       obj.submission = base64FromBytes(message.submission);
     }
+    if (message.nonce.length !== 0) {
+      obj.nonce = base64FromBytes(message.nonce);
+    }
     return obj;
   },
 
@@ -1447,6 +1468,7 @@ export const BlindSubmission: MessageFns<BlindSubmission> = {
     message.payload = object.payload ?? new Uint8Array(0);
     message.signature = object.signature ?? new Uint8Array(0);
     message.submission = object.submission ?? new Uint8Array(0);
+    message.nonce = object.nonce ?? new Uint8Array(0);
     return message;
   },
 };
