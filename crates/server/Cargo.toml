@@ -4,13 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 
-[profile.release]
-strip = true
-opt-level = 3
-panic = "abort"
-lto = true
-codegen-units = 1
-
 
 [dependencies]
 anyhow = "1.0.102"

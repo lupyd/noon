@@ -12,3 +12,12 @@ resolver = "3"
 noon-core = { path = "crates/core" }
 noon-server = { path = "crates/server" }
 
+
+
+[profile.release]
+strip = true
+opt-level = 3
+panic = "abort"
+lto = true
+codegen-units = 1
+
