@@ -85,7 +85,7 @@ async fn get_authorized_participant(
 
     if let Some(token) = auth_str.strip_prefix("EmailOnly ") {
         if let Ok((email, form_id)) =
-            forms_db::verify_email_jwt(&sd.db, token, &sd.auth_iss, &sd.auth_aud).await
+            forms_db::verify_email_jwt(&sd, token, &sd.config.auth_iss, &sd.config.auth_aud).await
         {
             if let Some(expected) = expected_form_id {
                 if let Some(token_form_id) = form_id {
@@ -139,7 +139,7 @@ async fn create_form_route(
     }
 
     let total_participants = form.allowed_participants.len();
-    let max = *crate::utils::MAX_PARTICIPANTS;
+    let max = sd.config.max_participants;
     if total_participants > max {
         return Ok(build_response(
             StatusCode::BAD_REQUEST,
@@ -216,11 +216,11 @@ async fn create_form_route(
 
                 join_set.spawn(async move {
                     if let Ok(token) = forms_db::generate_email_jwt(
-                        &sd.db,
+                        &sd,
                         &p,
                         Some(form_id),
-                        sd.auth_iss.clone(),
-                        sd.auth_aud.clone(),
+                        sd.config.auth_iss.clone(),
+                        sd.config.auth_aud.clone(),
                     )
                     .await
                     {
@@ -236,7 +236,7 @@ async fn create_form_route(
                                     log::error!("Failed to send invitation email to {}: {}", p, e)
                                 }
                             }
-                        } else if sd.skip_email_sending {
+                        } else if sd.config.skip_email_sending {
                             println!("--- EMAIL INVITATION ---");
                             println!("To: {}", p);
                             println!("Subject: Invitation to fill {}", form_name);
@@ -323,7 +323,7 @@ async fn get_public_key_route(
     _form_id: u64,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     // A single blind signer key for the whole app
-    match forms_db::get_or_create_blind_signer(&sd.db).await {
+    match forms_db::get_or_create_blind_signer(&sd).await {
         Ok(signer) => {
             let n = signer.public_key().n().to_bytes_le();
             let e = signer.public_key().e().to_bytes_le();
@@ -390,7 +390,7 @@ async fn blind_sign_route(
         }
     }
 
-    let signer = match forms_db::get_or_create_blind_signer(&sd.db).await {
+    let signer = match forms_db::get_or_create_blind_signer(&sd).await {
         Ok(s) => s,
         Err(_) => return Ok(internal_error_response()),
     };
@@ -440,7 +440,7 @@ async fn submit_blind_route(
         return Ok(bad_request_response());
     }
 
-    let signer = match forms_db::get_or_create_blind_signer(&sd.db).await {
+    let signer = match forms_db::get_or_create_blind_signer(&sd).await {
         Ok(s) => s,
         Err(_) => return Ok(internal_error_response()),
     };
@@ -771,6 +771,13 @@ async fn verify_otp_route(
     } else {
         Some(otp_verify.form_id)
     };
+
+    log::info!(
+        "verify_otp_route: email: {}, form_id: {}, code: {}",
+        otp_verify.email,
+        otp_verify.form_id,
+        otp_verify.code,
+    );
     common_verify_otp(
         otp_verify.email.to_string(),
         otp_verify.code.to_string(),
@@ -817,7 +824,7 @@ async fn common_request_otp(
                     log::error!("Failed to send OTP email: {}", e);
                     return Ok(internal_error_response());
                 }
-            } else if sd.skip_email_sending {
+            } else if sd.config.skip_email_sending {
                 log::info!(
                     "SKIP_EMAIL_SENDING is true, OTP code for {}: {}",
                     email,
@@ -843,12 +850,13 @@ async fn common_verify_otp(
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     match forms_db::verify_otp(&sd.db, &email, &code, form_id).await {
         Ok(true) => {
+            log::info!("email {} verified", email);
             match forms_db::generate_email_jwt(
-                &sd.db,
+                &sd,
                 &email,
                 form_id,
-                sd.auth_iss.clone(),
-                sd.auth_aud.clone(),
+                sd.config.auth_iss.clone(),
+                sd.config.auth_aud.clone(),
             )
             .await
             {

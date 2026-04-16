@@ -1,16 +1,18 @@
 use anyhow::Result;
 use lettre::message::{Mailbox, MultiPart, SinglePart};
-use lettre::transport::smtp::AsyncSmtpTransport;
 use lettre::transport::smtp::authentication::Credentials;
+use lettre::transport::smtp::{AsyncSmtpTransport, PoolConfig};
 use lettre::{AsyncTransport, Message, Tokio1Executor};
+use std::sync::Arc;
+use tokio::sync::{Semaphore, mpsc};
 
 pub struct Emailer {
-    transport: AsyncSmtpTransport<Tokio1Executor>,
+    sender: mpsc::Sender<Message>,
     from_address: Mailbox,
 }
 
 impl Emailer {
-    pub fn new() -> Result<Self> {
+    pub fn new(pool_size: usize) -> Result<Self> {
         let smtp_host = std::env::var("SMTP_HOST")?;
         let smtp_username = std::env::var("SMTP_USERNAME")?;
         let smtp_password = std::env::var("SMTP_PASSWORD")?;
@@ -19,12 +21,40 @@ impl Emailer {
         let credentials = Credentials::new(smtp_username, smtp_password);
         let transport = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp_host)?
             .credentials(credentials)
+            .pool_config(PoolConfig::new().max_size(pool_size as u32))
             .build();
 
-        let from_address = from_address.parse()?;
+        let from_address: Mailbox = from_address.parse()?;
+        let (sender, mut receiver) = mpsc::channel::<Message>(1000); // Internal queue size
+        let semaphore = Arc::new(Semaphore::new(pool_size));
+
+        // Start background manager
+        tokio::spawn(async move {
+            log::info!(
+                "Email background worker pool started with size: {}",
+                pool_size
+            );
+            while let Some(email) = receiver.recv().await {
+                // Wait for an available worker slot (semaphore permit)
+                let permit = match semaphore.clone().acquire_owned().await {
+                    Ok(p) => p,
+                    Err(_) => break, // Channel/Background task shutting down
+                };
+
+                let transport = transport.clone();
+                tokio::spawn(async move {
+                    match transport.send(email).await {
+                        Ok(_) => log::debug!("Background email sent successfully"),
+                        Err(e) => log::error!("Failed to send background email: {}", e),
+                    }
+                    // Permit is dropped here, freeing a slot for the next email
+                    drop(permit);
+                });
+            }
+        });
 
         Ok(Self {
-            transport,
+            sender,
             from_address,
         })
     }
@@ -59,8 +89,11 @@ impl Emailer {
                     .singlepart(SinglePart::html(html_body)),
             )?;
 
-        self.transport.send(email).await?;
-        log::info!("OTP email sent to {}", to_email);
+        self.sender
+            .send(email)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to queue OTP email: {}", e))?;
+        log::info!("OTP email queued for {}", to_email);
         Ok(())
     }
 
@@ -102,8 +135,11 @@ impl Emailer {
                     .singlepart(SinglePart::html(html_body)),
             )?;
 
-        self.transport.send(email).await?;
-        log::info!("Invitation email sent to {}", to_email);
+        self.sender
+            .send(email)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to queue invitation email: {}", e))?;
+        log::info!("Invitation email queued for {}", to_email);
         Ok(())
     }
 
@@ -144,6 +180,6 @@ impl Emailer {
 
 impl Default for Emailer {
     fn default() -> Self {
-        Self::new().expect("Failed to create emailer - check SMTP env vars")
+        Self::new(4).expect("Failed to create emailer - check SMTP env vars")
     }
 }
