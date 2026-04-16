@@ -1,4 +1,5 @@
 import React, { useEffect, useRef } from 'react';
+import { useTheme } from '../ThemeContext';
 
 interface FlareSet {
   back: Flare[];
@@ -55,6 +56,8 @@ class Flare {
 
 export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -83,7 +86,7 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
       ctx.save();
       ctx.translate(x, y);
       ctx.rotate(rotation);
-      const color = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || 'white';
+      const color = isDark ? 'white' : 'black';
       ctx.beginPath();
       ctx.lineWidth = 6 * scale;
       ctx.strokeStyle = color;
@@ -100,8 +103,7 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
       const coreRadius = 150 * scale;
       ctx.save();
 
-      const primaryColor = getComputedStyle(document.documentElement).getPropertyValue('--primary').trim() || 'white';
-      const isDark = primaryColor === 'white' || primaryColor === '#ffffff';
+      const primaryColor = isDark ? 'white' : 'black';
       
       ctx.save();
       ctx.translate(x, y); ctx.rotate(sunRotation); ctx.translate(-x, -y);
@@ -109,7 +111,7 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
       ctx.restore();
 
       ctx.shadowBlur = 40 * scale;
-      ctx.shadowColor = primaryColor === 'white' ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)';
+      ctx.shadowColor = isDark ? 'rgba(255, 255, 255, 0.2)' : 'rgba(0, 0, 0, 0.1)';
       ctx.beginPath();
       ctx.arc(x, y, coreRadius, 0, Math.PI * 2);
       ctx.fillStyle = primaryColor;
@@ -152,7 +154,7 @@ export const SunLogo: React.FC<{ height?: number }> = ({ height = 100 }) => {
     return () => {
       cancelAnimationFrame(animationFrameId);
     };
-  }, [height]);
+  }, [height, isDark]);
 
   return (
     <canvas
