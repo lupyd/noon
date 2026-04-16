@@ -1,9 +1,5 @@
 import React, { useState, useCallback, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
-import {
-    encodeOtpRequest,
-    encodeOtpVerify
-} from './proto';
 import { API_URL } from './config';
 
 interface AuthState {
@@ -42,6 +38,7 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
     const requestEmailCode = async (emailAddr: string, formId: number = 0) => {
         setIsLoading(true);
         try {
+            const { encodeOtpRequest } = await import('./proto');
             const encoded = encodeOtpRequest({ email: emailAddr, formId });
             const response = await fetch(`${API_URL}/email/request_otp`, {
                 method: 'POST',
@@ -60,6 +57,7 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
     const loginWithEmail = async (emailAddr: string, code: string, formId: number = 0) => {
         setIsLoading(true);
         try {
+            const { encodeOtpVerify } = await import('./proto');
             const encoded = encodeOtpVerify({ email: emailAddr, code, formId });
             const response = await fetch(`${API_URL}/email/verify_otp`, {
                 method: 'POST',

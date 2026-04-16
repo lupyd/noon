@@ -1,55 +1,29 @@
-# Stage 1: Build
-# Using the Alpine-based Rust image to ensure we build against musl
-FROM rust:1.91-alpine AS builder
 
-# Install build dependencies for Rust compilation
-RUN apk add --no-cache \
-    musl-dev \
-    binutils \
-    git
+FROM rustlang/rust:nightly AS builder
 
-WORKDIR /usr/src/noon
-
-# Copy workspace configuration and lockfile first to leverage Docker cache
-# However, since it's a multi-crate workspace, we copy the relevant crates too
-COPY Cargo.toml Cargo.lock ./
-COPY proto/ ./proto/
-COPY crates/ ./crates/
-
-# Build the server crate in release mode
-# --locked ensures the build uses the exact versions in Cargo.lock
-RUN cargo build --release -p noon-server --locked
-
-# Strip the binary to remove debug symbols and reduce size significantly
-RUN strip target/release/noon-server
-
-# Stage 2: Runtime
-# Using alpine for a minimal (~5MB) but functional base image
-FROM alpine:latest
-
-# Install CA certificates for secure outgoing requests (e.g., sending emails or API calls)
-RUN apk add --no-cache ca-certificates
-
-# Create a non-root user for security best practices
-RUN addgroup -S noon && adduser -S noon -G noon
 
 WORKDIR /app
 
-# Copy the static binary from the builder stage
-COPY --from=builder /usr/src/noon/target/release/noon-server /app/noon-server
+# Add musl support
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    musl-tools ca-certificates && \
+    rustup target add x86_64-unknown-linux-musl && \
+    update-ca-certificates    
 
-# Ensure the binary has the correct permissions
-RUN chown noon:noon /app/noon-server
+# Build static binary
+COPY . .
+RUN cargo build --release -p noon-server --locked --target x86_64-unknown-linux-musl
 
-# Switch to the non-root user
-USER noon
+# Final stage
+FROM scratch
+COPY --from=builder /app/target/x86_64-unknown-linux-musl/release/noon-server /noon-server
 
-# Default port for the noon server
-EXPOSE 39210
+# Copy CA certs
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 
-# Set environment variables if needed
 ENV PORT=39210
 ENV RUST_LOG=info
 
-# Run the server
-CMD ["./noon-server"]
+EXPOSE $PORT
+
+ENTRYPOINT ["/noon-server"]

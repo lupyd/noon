@@ -1,35 +1,76 @@
 use std::str::FromStr;
 
 use deadpool_postgres::{
-    tokio_postgres::{self, config::SslMode, Config, NoTls},
+    tokio_postgres::{self, config::SslMode, NoTls},
     Manager,
 };
 
 use crate::email::Emailer;
 
-pub struct SharedData {
-    pub db: deadpool_postgres::Pool,
-    pub emailer: Option<Emailer>,
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use noon_core::blind::BlindSigner;
+
+pub struct AppConfig {
+    pub db_conn_str: String,
+    pub db_pool_size: usize,
+    pub db_cert: Option<String>,
     pub skip_email_sending: bool,
     pub auth_iss: String,
     pub auth_aud: String,
+    pub frontend_url: String,
+    pub max_participants: usize,
+    pub smtp_pool_size: usize,
 }
+
+pub struct KeyCache {
+    pub blind_signer: RwLock<Option<Arc<BlindSigner>>>,
+    pub jwt_secret: RwLock<Option<(Vec<u8>, SystemTime)>>,
+    pub jwt_recent_secrets: RwLock<Option<Vec<Vec<u8>>>>,
+}
+
+pub struct SharedData {
+    pub config: AppConfig,
+    pub db: deadpool_postgres::Pool,
+    pub emailer: Option<Emailer>,
+    pub cache: KeyCache,
+}
+
+use std::time::SystemTime;
 
 impl SharedData {
     pub fn new() -> Self {
         use std::env::var;
 
-        let pool = build_pool();
+        let config = AppConfig {
+            db_conn_str: var("DB_CONN_STR").expect("Missing DB_CONN_STR env var"),
+            db_pool_size: var("DB_POOL_SIZE")
+                .map(|s| s.parse::<usize>().unwrap_or(100))
+                .unwrap_or(100),
+            db_cert: var("DB_CERT").ok(),
+            skip_email_sending: var("SKIP_EMAIL_SENDING")
+                .map(|s| s.to_lowercase() == "true")
+                .unwrap_or(false),
+            auth_iss: var("AUTH_ISS").unwrap_or_else(|_| "noon.lupyd.com".to_string()),
+            auth_aud: var("AUTH_AUD").unwrap_or_else(|_| "noon-api".to_string()),
+            frontend_url: var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:8080".to_string()),
+            max_participants: var("MAX_PARTICIPANTS")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(10),
+            smtp_pool_size: var("SMTP_POOL_SIZE")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(4),
+        };
 
-        let skip_email_sending = var("SKIP_EMAIL_SENDING")
-            .map(|s| s.to_lowercase() == "true")
-            .unwrap_or(false);
+        let pool = build_pool(&config);
 
-        let emailer = if skip_email_sending {
+        let emailer = if config.skip_email_sending {
             log::info!("SKIP_EMAIL_SENDING is set to true. Emailer will be disabled.");
             None
         } else {
-            match Emailer::new() {
+            match Emailer::new(config.smtp_pool_size) {
                 Ok(e) => {
                     log::info!("Emailer initialized successfully");
                     Some(e)
@@ -44,44 +85,38 @@ impl SharedData {
             }
         };
 
-        let auth_iss = var("AUTH_ISS").unwrap_or_else(|_| "noon.lupyd.com".to_string());
-        let auth_aud = var("AUTH_AUD").unwrap_or_else(|_| "noon-api".to_string());
-
         Self {
             db: pool,
             emailer,
-            skip_email_sending,
-            auth_iss,
-            auth_aud,
+            config,
+            cache: KeyCache {
+                blind_signer: RwLock::new(None),
+                jwt_secret: RwLock::new(None),
+                jwt_recent_secrets: RwLock::new(None),
+            },
         }
     }
 }
 
-fn build_pool() -> deadpool_postgres::Pool {
-    let conn_str = std::env::var("DB_CONN_STR").expect("Missing DB_CONN_STR env var");
-
-    let mut config = Config::from_str(&conn_str).unwrap();
+fn build_pool(config: &AppConfig) -> deadpool_postgres::Pool {
+    let mut pg_config = tokio_postgres::Config::from_str(&config.db_conn_str).unwrap();
 
     let manager_config = deadpool_postgres::ManagerConfig {
         recycling_method: deadpool_postgres::RecyclingMethod::Fast,
     };
 
-    let manager = if config.get_ssl_mode() == SslMode::Disable {
-        Manager::from_config(config, NoTls, manager_config)
+    let manager = if pg_config.get_ssl_mode() == SslMode::Disable {
+        Manager::from_config(pg_config, NoTls, manager_config)
     } else {
-        let tls_config = postgres_tls_config(&std::env::var("DB_CERT").ok()).unwrap();
+        let tls_config = postgres_tls_config(&config.db_cert).unwrap();
         let tls = tokio_postgres_rustls::MakeRustlsConnect::new(tls_config);
 
-        config.ssl_mode(tokio_postgres::config::SslMode::Require);
-        Manager::from_config(config, tls, manager_config)
+        pg_config.ssl_mode(tokio_postgres::config::SslMode::Require);
+        Manager::from_config(pg_config, tls, manager_config)
     };
 
-    let pool_size = std::env::var("DB_POOL_SIZE")
-        .map(|s| s.parse::<usize>().unwrap_or(100))
-        .unwrap_or(100);
-
     let pool = deadpool_postgres::Pool::builder(manager)
-        .max_size(pool_size)
+        .max_size(config.db_pool_size)
         .build()
         .unwrap();
 
