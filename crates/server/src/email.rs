@@ -1,11 +1,11 @@
 use anyhow::Result;
 use lettre::message::{Mailbox, MultiPart, SinglePart};
-use lettre::transport::smtp::SmtpTransport;
+use lettre::transport::smtp::AsyncSmtpTransport;
 use lettre::transport::smtp::authentication::Credentials;
-use lettre::{Message, Transport};
+use lettre::{AsyncTransport, Message, Tokio1Executor};
 
 pub struct Emailer {
-    transport: SmtpTransport,
+    transport: AsyncSmtpTransport<Tokio1Executor>,
     from_address: Mailbox,
 }
 
@@ -17,7 +17,7 @@ impl Emailer {
         let from_address = std::env::var("SMTP_FROM")?;
 
         let credentials = Credentials::new(smtp_username, smtp_password);
-        let transport = SmtpTransport::starttls_relay(&smtp_host)?
+        let transport = AsyncSmtpTransport::<Tokio1Executor>::starttls_relay(&smtp_host)?
             .credentials(credentials)
             .build();
 
@@ -29,7 +29,7 @@ impl Emailer {
         })
     }
 
-    pub fn send_otp_email(&self, to_email: &str, form_name: &str, otp: &str) -> Result<()> {
+    pub async fn send_otp_email(&self, to_email: &str, form_name: &str, otp: &str) -> Result<()> {
         let to_address: Mailbox = to_email.parse()?;
 
         let text_body = format!(
@@ -59,12 +59,12 @@ impl Emailer {
                     .singlepart(SinglePart::html(html_body)),
             )?;
 
-        self.transport.send(&email)?;
+        self.transport.send(email).await?;
         log::info!("OTP email sent to {}", to_email);
         Ok(())
     }
 
-    pub fn send_form_invitation(
+    pub async fn send_form_invitation(
         &self,
         to_email: &str,
         form_name: &str,
@@ -102,7 +102,7 @@ impl Emailer {
                     .singlepart(SinglePart::html(html_body)),
             )?;
 
-        self.transport.send(&email)?;
+        self.transport.send(email).await?;
         log::info!("Invitation email sent to {}", to_email);
         Ok(())
     }

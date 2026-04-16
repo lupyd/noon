@@ -5,6 +5,7 @@ use hyper::{Method, Request, Response, StatusCode, body::Incoming, header};
 use quick_protobuf::MessageRead;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
+use tokio::task::JoinSet;
 
 use crate::forms_db;
 use crate::pb::forms::{BlindSubmission, Form, FormSubmission, OtpRequest, OtpVerify};
@@ -197,42 +198,60 @@ async fn create_form_route(
                 .strip_prefix("email:")
                 .or_else(|| owner.strip_prefix("user:"))
                 .unwrap_or(&owner);
+            let mut join_set = JoinSet::new();
+            let owner_display_str = owner_display.to_string();
+            let form_name_str = form.name.to_string();
 
             for participant in &form.allowed_participants {
-                let p = participant.as_ref();
-                if p.contains('@') {
+                let p = participant.to_string();
+                if !p.contains("@") {
+                    continue;
+                }
+
+                let sd = sd.clone();
+                let form_name = form_name_str.clone();
+                let owner_display = owner_display_str.clone();
+                let frontend_url = frontend_url.clone();
+                let form_id = id;
+
+                join_set.spawn(async move {
                     if let Ok(token) = forms_db::generate_email_jwt(
                         &sd.db,
-                        p,
-                        Some(id),
+                        &p,
+                        Some(form_id),
                         sd.auth_iss.clone(),
                         sd.auth_aud.clone(),
                     )
                     .await
                     {
-                        let form_link = format!("{}/forms/{}?token={}", frontend_url, id, token);
+                        let form_link =
+                            format!("{}/forms/{}?token={}", frontend_url, form_id, token);
                         if let Some(emailer) = &sd.emailer {
-                            if let Err(e) = emailer.send_form_invitation(
-                                p,
-                                &form.name,
-                                owner_display,
-                                &form_link,
-                            ) {
-                                log::error!("Failed to send invitation email to {}: {}", p, e);
+                            match emailer
+                                .send_form_invitation(&p, &form_name, &owner_display, &form_link)
+                                .await
+                            {
+                                Ok(_) => {}
+                                Err(e) => {
+                                    log::error!("Failed to send invitation email to {}: {}", p, e)
+                                }
                             }
                         } else if sd.skip_email_sending {
                             println!("--- EMAIL INVITATION ---");
                             println!("To: {}", p);
-                            println!("Subject: Invitation to fill {}", form.name);
+                            println!("Subject: Invitation to fill {}", form_name);
                             println!(
-                                "Body: {} has invited you to fill out the form: {}\nDirect Link: {}",
-                                owner_display, form.name, form_link
+                                "Body: {} has invited you to fill out the form: {}
+Direct Link: {}",
+                                owner_display, form_name, form_link
                             );
                             println!("------------------------");
                         }
                     }
-                }
+                });
             }
+
+            while join_set.join_next().await.is_some() {}
 
             Ok(build_response(
                 StatusCode::OK,
@@ -526,7 +545,10 @@ async fn submit_blind_route(
                     }
                     Value::None => {
                         if field.required {
-                            return Ok(build_response(StatusCode::BAD_REQUEST, format!("Field '{}' is required", field.label.as_ref())));
+                            return Ok(build_response(
+                                StatusCode::BAD_REQUEST,
+                                format!("Field '{}' is required", field.label.as_ref()),
+                            ));
                         }
                     }
                 }
@@ -791,7 +813,7 @@ async fn common_request_otp(
         Ok(code) => {
             log::info!("Created OTP code for {}: {}", email, code);
             if let Some(emailer) = &sd.emailer {
-                if let Err(e) = emailer.send_otp_email(&email, &display_name, &code) {
+                if let Err(e) = emailer.send_otp_email(&email, &display_name, &code).await {
                     log::error!("Failed to send OTP email: {}", e);
                     return Ok(internal_error_response());
                 }

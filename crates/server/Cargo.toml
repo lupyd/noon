@@ -30,7 +30,7 @@ tokio-postgres-rustls = { version = "0.13.0" }
 tracing-subscriber = { version = "0.3.22", features = ["env-filter"] }
 noon-core = { path = "../core" }
 rsa = { version = "0.9.10", features = ["sha2"] }
-lettre = { version = "0.11", default-features = false, features = ["rustls-tls", "builder", "smtp-transport", "hostname"] }
+lettre = { version = "0.11", default-features = false, features = ["tokio1-rustls-tls", "builder", "smtp-transport", "hostname"] }
 
 uuid = { version = "1", features = ["v4"] }
 jsonwebtoken = { version = "10.3.0", features = ["hmac", "rust_crypto"] }
