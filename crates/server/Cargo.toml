@@ -44,6 +44,7 @@ lettre = { version = "0.11", default-features = false, features = ["tokio1-rustl
 uuid = { version = "1", features = ["v4"] }
 jsonwebtoken = { version = "10.3.0", features = ["hmac", "rust_crypto"] }
 regex = "1.12.3"
+sha2 = "0.10.8"
 
 
 [build-dependencies]

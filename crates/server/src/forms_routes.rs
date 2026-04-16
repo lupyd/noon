@@ -432,20 +432,30 @@ async fn submit_blind_route(
         }
     };
 
-    let payload = blind_sub.payload.to_vec();
     let signature = blind_sub.signature.to_vec();
     let submission_bytes = blind_sub.submission.to_vec();
+    let nonce = blind_sub.nonce.to_vec();
 
-    if payload.is_empty() || signature.is_empty() || submission_bytes.is_empty() {
+    if signature.is_empty() || submission_bytes.is_empty() || nonce.is_empty() {
         return Ok(bad_request_response());
     }
 
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(&submission_bytes);
+    hasher.update(&nonce);
+    let payload = hasher.finalize().to_vec();
+
     let signer = match forms_db::get_or_create_blind_signer(&sd).await {
         Ok(s) => s,
-        Err(_) => return Ok(internal_error_response()),
+        Err(e) => {
+            log::error!("get_or_create_blind_signer error: {:?}", e);
+            return Ok(internal_error_response());
+        }
     };
 
     if !signer.verify(&payload, &signature) {
+        log::warn!("Invalid blind signature for form {}", form_id);
         return Ok(build_response(
             StatusCode::UNAUTHORIZED,
             "Invalid blind signature",
