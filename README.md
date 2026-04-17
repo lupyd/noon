@@ -115,14 +115,13 @@ npm run dev
 5. **Anonymous Submission**: Client submits the form response and the unblinded signature via an unauthenticated request.
 6. **Verification**: Server verifies the signature using its public key, ensuring authenticity while remaining "blind" to the submitter's identity.
 
-For a deep dive into the cryptography and anonymity guarantees, see [ARTICLE.md](./ARTICLE.md).
+For a deep dive into the cryptography and anonymity guarantees, click [here](https://blogs.lupyd.com/blog/introducing-noon-anonymous-form-submissions).
 
 ## Anonymity Considerations
 
 While Noon uses strong cryptography, true anonymity in a web environment is challenging due to network-level linkability (IP addresses) and browser fingerprinting. For maximum privacy, we recommend:
 - Using different network paths for the signing and submission steps (e.g., submitting via Tor).
 - Avoiding browser-based submissions for extremely sensitive data.
-- See the "Making it Better" section in [ARTICLE.md](./ARTICLE.md) for future improvements like proxying and dedicated apps.
 
 ## License
 
