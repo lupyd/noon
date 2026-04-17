@@ -69,7 +69,7 @@ function generateSunGroup(centerX, centerY, isDark, rotationDeg) {
   group += `<circle cx="0" cy="0" r="${CORE_RADIUS}" fill="${primaryColor}" />`;
 
   // Spiral inside
-  group += `<path d="${generateSpiralPath(1)}" fill="none" stroke="${spiralStroke}" stroke-width="0.6" stroke-linecap="round" />`;
+  // group += `<path d="${generateSpiralPath(1)}" fill="none" stroke="${spiralStroke}" stroke-width="0.6" stroke-linecap="round" />`;
 
   // Front flares (opposite lean direction)
   for (let i = 0; i < FLARE_COUNT; i++) {
