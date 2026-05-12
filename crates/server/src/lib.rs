@@ -11,6 +11,8 @@ pub mod forms_routes;
 pub mod otp;
 pub mod pb;
 pub mod shared_data;
+pub mod subscription_db;
+pub mod subscription_routes;
 pub mod utils;
 
 pub use crate::shared_data::SharedData;
@@ -164,6 +166,10 @@ pub async fn service(
 
     if path.starts_with("/forms") || path.starts_with("/email") {
         return forms_routes::handle_request(request, sd, &path).await;
+    }
+
+    if path.starts_with("/subscription") {
+        return subscription_routes::handle_request(request, sd, &path).await;
     }
 
     match path.as_str() {

@@ -138,14 +138,40 @@ async fn create_form_route(
         ));
     }
 
-    let total_participants = form.allowed_participants.len();
-    let max = sd.config.max_participants;
-    if total_participants > max {
+    let tier = match forms_db::get_user_subscription_tier(&sd.db, &owner).await {
+        Ok(t) => t,
+        Err(e) => {
+            log::error!("get_user_subscription_tier error: {:?}", e);
+            return Ok(internal_error_response());
+        }
+    };
+
+    let max_forms = sd.config.limits.max_forms_for(&tier);
+    let form_count = match forms_db::get_owner_form_count(&sd.db, &owner).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("get_owner_form_count error: {:?}", e);
+            return Ok(internal_error_response());
+        }
+    };
+    if form_count >= max_forms as u64 {
         return Ok(build_response(
             StatusCode::BAD_REQUEST,
             format!(
-                "Maximum number of participants allowed is {}. You have {}. Please contact contact@lupyd.com to increase your limit.",
-                max, total_participants
+                "You have reached the form limit for your {} plan ({} forms). Please upgrade your subscription at lupyd.com to create more forms.",
+                tier, max_forms
+            ),
+        ));
+    }
+
+    let total_participants = form.allowed_participants.len();
+    let max_participants = sd.config.limits.max_participants_for(&tier);
+    if total_participants > max_participants {
+        return Ok(build_response(
+            StatusCode::BAD_REQUEST,
+            format!(
+                "Your {} plan allows a maximum of {} participants per form. You have {}. Please upgrade your subscription at lupyd.com to increase this limit.",
+                tier, max_participants, total_participants
             ),
         ));
     }

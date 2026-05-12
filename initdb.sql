@@ -59,3 +59,23 @@ CREATE INDEX IF NOT EXISTS idx_otp_codes_expires ON otp_codes(expires_at) WHERE 
      created_at TIMESTAMPTZ DEFAULT NOW(),
      expires_at TIMESTAMPTZ
  );
+
+CREATE TABLE IF NOT EXISTS user_subscriptions (
+    owner VARCHAR NOT NULL PRIMARY KEY,
+    tier VARCHAR NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro', 'enterprise')),
+    razorpay_subscription_id VARCHAR UNIQUE,
+    razorpay_plan_id VARCHAR,
+    subscription_status VARCHAR NOT NULL DEFAULT 'inactive',
+    current_period_end TIMESTAMPTZ,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_subscriptions_owner ON user_subscriptions(owner);
+CREATE INDEX IF NOT EXISTS idx_user_subscriptions_rzpay ON user_subscriptions(razorpay_subscription_id) WHERE razorpay_subscription_id IS NOT NULL;
+
+-- Migration: add Razorpay columns if table already exists (safe to run multiple times)
+ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS razorpay_subscription_id VARCHAR UNIQUE;
+ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS razorpay_plan_id VARCHAR;
+ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS subscription_status VARCHAR NOT NULL DEFAULT 'inactive';
+ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ;

@@ -548,3 +548,34 @@ pub async fn get_form_submissions_count(pool: &Pool, form_id: u64) -> anyhow::Re
     let count: i64 = row.get(0);
     Ok(count as u64)
 }
+
+pub async fn get_user_subscription_tier(pool: &Pool, owner: &str) -> anyhow::Result<String> {
+    let client = pool.get().await?;
+    let rows = client
+        .query_typed(
+            "SELECT tier FROM user_subscriptions WHERE owner = $1",
+            &[(&owner, Type::VARCHAR)],
+        )
+        .await?;
+    Ok(rows
+        .into_iter()
+        .next()
+        .map(|r| r.get::<_, String>(0))
+        .unwrap_or_else(|| "free".to_string()))
+}
+
+pub async fn get_owner_form_count(pool: &Pool, owner: &str) -> anyhow::Result<u64> {
+    let client = pool.get().await?;
+    let rows = client
+        .query_typed(
+            "SELECT COUNT(*) FROM forms WHERE owner = $1",
+            &[(&owner, Type::VARCHAR)],
+        )
+        .await?;
+    let row = rows
+        .into_iter()
+        .next()
+        .context("No row returned from COUNT")?;
+    let count: i64 = row.get(0);
+    Ok(count as u64)
+}
