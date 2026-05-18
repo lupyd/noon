@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 import { useUnifiedAuth } from '../auth';
 import { Plus, Trash2, Send, CheckCircle, Copy, Check, Mail } from 'lucide-react';
 import {
@@ -8,8 +9,6 @@ import {
 } from '../proto';
 import { SunLogo } from './logo';
 import { API_URL } from '../config';
-
-const MAX_PARTICIPANTS = 10;
 
 const EMAIL_REGEX = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
 
@@ -51,6 +50,8 @@ const FIELD_TYPES = [
 ];
 
 export const FormBuilder: React.FC = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const {
     isAuthenticated,
     email: verifiedEmail,
@@ -59,6 +60,7 @@ export const FormBuilder: React.FC = () => {
     requestEmailCode,
     loginWithEmail: verifyEmailCode
   } = useUnifiedAuth();
+  const [maxParticipants, setMaxParticipants] = useState(10);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [fields, setFields] = useState<FormFieldInput[]>([]);
@@ -73,6 +75,26 @@ export const FormBuilder: React.FC = () => {
   const [emailVerificationCode, setEmailVerificationCode] = useState('');
   const [showEmailVerifyInput, setShowEmailVerifyInput] = useState(false);
   const [emailVerifyError, setEmailVerifyError] = useState<string | null>(null);
+
+  React.useEffect(() => {
+    const fetchLimit = async () => {
+      if (isAuthenticated) {
+        try {
+          const headers = await getAuthHeaders();
+          const resp = await fetch(`${API_URL}/subscription/status`, { headers });
+          if (resp.ok) {
+            const data = await resp.json();
+            if (data.max_participants) {
+              setMaxParticipants(data.max_participants);
+            }
+          }
+        } catch (e) {
+          console.error("Failed to fetch limit", e);
+        }
+      }
+    };
+    fetchLimit();
+  }, [isAuthenticated, getAuthHeaders]);
 
   const addField = () => {
     const fieldId = `field_${Math.random().toString(36).substr(2, 9)}`;
@@ -138,8 +160,8 @@ export const FormBuilder: React.FC = () => {
       return;
     }
 
-    if (mentionedEmailsArray.length > MAX_PARTICIPANTS) {
-      setError(`Maximum ${MAX_PARTICIPANTS} participants allowed. You have ${mentionedEmailsArray.length}. Contact contact@lupyd.com to increase your limit.`);
+    if (mentionedEmailsArray.length > maxParticipants) {
+      setError(`Maximum ${maxParticipants} participants allowed. You have ${mentionedEmailsArray.length}. Contact contact@lupyd.com to increase your limit.`);
       setIsSubmitting(false);
       return;
     }
@@ -239,6 +261,11 @@ export const FormBuilder: React.FC = () => {
       await verifyEmailCode(emailInput, emailVerificationCode);
       setShowEmailVerifyInput(false);
       setEmailVerifyError(null);
+      const searchParams = new URLSearchParams(location.search);
+      const redirect = searchParams.get('redirect');
+      if (redirect) {
+        navigate(redirect);
+      }
     } catch (err) {
       setEmailVerifyError((err as Error).message);
     }
@@ -384,12 +411,12 @@ export const FormBuilder: React.FC = () => {
               <Mail size={18} /> Participant Whitelist
             </h3>
             <span className="badge" style={{
-              background: (mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length > MAX_PARTICIPANTS)
+              background: (mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length > maxParticipants)
                 ? 'rgba(239, 68, 68, 0.15)' : undefined,
-              color: (mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length > MAX_PARTICIPANTS)
+              color: (mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length > maxParticipants)
                 ? 'var(--error)' : undefined,
             }}>
-              {mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length} / {MAX_PARTICIPANTS}
+              {mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length} / {maxParticipants}
             </span>
           </div>
           <p className="help-text" style={{ marginBottom: '1.5rem' }}>Only these emails will be allowed to fill the form. <strong>Invitation emails with direct access links will be sent automatically.</strong></p>
@@ -400,7 +427,7 @@ export const FormBuilder: React.FC = () => {
               onChange={(e) => setMentionedEmails(e.target.value)}
               placeholder="team@company.com, user@example.com"
             />
-            <p className="help-text">Comma-separated list of authorized respondents (max {MAX_PARTICIPANTS}). Need more? Contact <a href="mailto:contact@lupyd.com" style={{ color: 'var(--primary)' }}>contact@lupyd.com</a>.</p>
+            <p className="help-text">Comma-separated list of authorized respondents (max {maxParticipants}). Need more? Contact <a href="mailto:contact@lupyd.com" style={{ color: 'var(--primary)' }}>contact@lupyd.com</a>.</p>
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>

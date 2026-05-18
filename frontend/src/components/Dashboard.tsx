@@ -76,7 +76,7 @@ export const Dashboard: React.FC = () => {
       <AlertCircle size={64} color="var(--error)" style={{ margin: '0 auto 2rem' }} />
       <h2 style={{ fontSize: '2rem', marginBottom: '1rem' }}>Unauthorized Access</h2>
       <p className="text-muted" style={{ marginBottom: '3rem' }}>{error}</p>
-      <Link to="/create" className="primary-button">Sign In / Verify Email</Link>
+      <Link to="/create?redirect=/dashboard" className="primary-button">Sign In / Verify Email</Link>
     </div>
   );
 

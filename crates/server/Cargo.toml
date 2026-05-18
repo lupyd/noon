@@ -39,6 +39,7 @@ jsonwebtoken = { version = "10.3.0", features = ["hmac", "rust_crypto"] }
 regex = "1.12.3"
 sha2 = "0.10.8"
 hex = "0.4"
+governor = "0.10.4"
 
 
 [build-dependencies]

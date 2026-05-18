@@ -62,10 +62,17 @@ CREATE INDEX IF NOT EXISTS idx_otp_codes_expires ON otp_codes(expires_at) WHERE 
 
 CREATE TABLE IF NOT EXISTS user_subscriptions (
     owner VARCHAR NOT NULL PRIMARY KEY,
-    tier VARCHAR NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro', 'enterprise')),
+    tier VARCHAR NOT NULL DEFAULT 'free' CHECK (tier IN ('free', 'pro', 'team')),
     razorpay_subscription_id VARCHAR UNIQUE,
     razorpay_plan_id VARCHAR,
-    subscription_status VARCHAR NOT NULL DEFAULT 'inactive',
+    -- subscription_status mappings:
+    -- 0 = inactive
+    -- 1 = pending
+    -- 2 = active
+    -- 3 = cancelled
+    -- 4 = halted
+    -- 5 = completed
+    subscription_status SMALLINT NOT NULL DEFAULT 0,
     current_period_end TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
@@ -77,5 +84,31 @@ CREATE INDEX IF NOT EXISTS idx_user_subscriptions_rzpay ON user_subscriptions(ra
 -- Migration: add Razorpay columns if table already exists (safe to run multiple times)
 ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS razorpay_subscription_id VARCHAR UNIQUE;
 ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS razorpay_plan_id VARCHAR;
-ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS subscription_status VARCHAR NOT NULL DEFAULT 'inactive';
+ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS subscription_status SMALLINT NOT NULL DEFAULT 0;
+
+DO $$
+BEGIN
+    IF EXISTS (
+        SELECT 1 
+        FROM information_schema.columns 
+        WHERE table_name = 'user_subscriptions' 
+          AND column_name = 'subscription_status' 
+          AND data_type = 'character varying'
+    ) THEN
+        ALTER TABLE user_subscriptions ALTER COLUMN subscription_status DROP DEFAULT;
+        ALTER TABLE user_subscriptions ALTER COLUMN subscription_status TYPE SMALLINT USING (
+            CASE subscription_status 
+                WHEN 'inactive' THEN 0 
+                WHEN 'pending' THEN 1 
+                WHEN 'active' THEN 2 
+                WHEN 'cancelled' THEN 3 
+                WHEN 'halted' THEN 4 
+                WHEN 'completed' THEN 5 
+                ELSE 0 
+            END
+        );
+        ALTER TABLE user_subscriptions ALTER COLUMN subscription_status SET DEFAULT 0;
+    END IF;
+END $$;
+
 ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ;

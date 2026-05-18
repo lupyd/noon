@@ -2,12 +2,64 @@ use deadpool_postgres::Pool;
 use deadpool_postgres::tokio_postgres::types::Type;
 use std::time::SystemTime;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[repr(i16)]
+pub enum SubscriptionStatus {
+    Inactive = 0,
+    Pending = 1,
+    Active = 2,
+    Cancelled = 3,
+    Halted = 4,
+    Completed = 5,
+}
+
+impl SubscriptionStatus {
+    pub fn to_i16(self) -> i16 {
+        self as i16
+    }
+
+    pub fn from_i16(val: i16) -> Self {
+        match val {
+            0 => Self::Inactive,
+            1 => Self::Pending,
+            2 => Self::Active,
+            3 => Self::Cancelled,
+            4 => Self::Halted,
+            5 => Self::Completed,
+            _ => Self::Inactive,
+        }
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Inactive => "inactive",
+            Self::Pending => "pending",
+            Self::Active => "active",
+            Self::Cancelled => "cancelled",
+            Self::Halted => "halted",
+            Self::Completed => "completed",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "inactive" => Self::Inactive,
+            "pending" => Self::Pending,
+            "active" => Self::Active,
+            "cancelled" => Self::Cancelled,
+            "halted" => Self::Halted,
+            "completed" => Self::Completed,
+            _ => Self::Inactive,
+        }
+    }
+}
+
 pub struct SubscriptionInfo {
     pub owner: String,
     pub tier: String,
     pub razorpay_subscription_id: Option<String>,
     pub razorpay_plan_id: Option<String>,
-    pub subscription_status: String,
+    pub subscription_status: SubscriptionStatus,
     /// Unix timestamp seconds of billing period end, None if free/inactive
     pub current_period_end: Option<i64>,
 }
@@ -30,7 +82,7 @@ pub async fn get_subscription_info(pool: &Pool, owner: &str) -> anyhow::Result<S
             tier: row.get(0),
             razorpay_subscription_id: row.get(1),
             razorpay_plan_id: row.get(2),
-            subscription_status: row.get(3),
+            subscription_status: SubscriptionStatus::from_i16(row.get(3)),
             current_period_end: row.get(4),
         })
     } else {
@@ -39,7 +91,7 @@ pub async fn get_subscription_info(pool: &Pool, owner: &str) -> anyhow::Result<S
             tier: "free".to_string(),
             razorpay_subscription_id: None,
             razorpay_plan_id: None,
-            subscription_status: "inactive".to_string(),
+            subscription_status: SubscriptionStatus::Inactive,
             current_period_end: None,
         })
     }
@@ -58,12 +110,12 @@ pub async fn upsert_pending_subscription(
         .query_typed(
             "INSERT INTO user_subscriptions \
                  (owner, tier, razorpay_subscription_id, razorpay_plan_id, subscription_status, updated_at) \
-             VALUES ($1, $2, $3, $4, 'pending', NOW()) \
+             VALUES ($1, $2, $3, $4, 1, NOW()) \
              ON CONFLICT (owner) DO UPDATE SET \
                  tier                     = EXCLUDED.tier, \
                  razorpay_subscription_id = EXCLUDED.razorpay_subscription_id, \
                  razorpay_plan_id         = EXCLUDED.razorpay_plan_id, \
-                 subscription_status      = 'pending', \
+                 subscription_status      = 1, \
                  updated_at               = NOW()",
             &[
                 (&owner, Type::VARCHAR),
@@ -87,6 +139,8 @@ pub async fn activate_subscription(
     let period_end: Option<SystemTime> = current_period_end_unix
         .map(|ts| SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(ts as u64));
 
+    let status_val = SubscriptionStatus::from_str(status).to_i16();
+
     client
         .query_typed(
             "UPDATE user_subscriptions \
@@ -94,7 +148,7 @@ pub async fn activate_subscription(
              WHERE razorpay_subscription_id = $1",
             &[
                 (&razorpay_subscription_id, Type::VARCHAR),
-                (&status, Type::VARCHAR),
+                (&status_val, Type::INT2),
                 (&period_end, Type::TIMESTAMPTZ),
             ],
         )
@@ -109,6 +163,8 @@ pub async fn cancel_subscription(
     status: &str,
 ) -> anyhow::Result<()> {
     let client = pool.get().await?;
+    let status_val = SubscriptionStatus::from_str(status).to_i16();
+
     client
         .query_typed(
             "UPDATE user_subscriptions \
@@ -116,7 +172,7 @@ pub async fn cancel_subscription(
              WHERE razorpay_subscription_id = $1",
             &[
                 (&razorpay_subscription_id, Type::VARCHAR),
-                (&status, Type::VARCHAR),
+                (&status_val, Type::INT2),
             ],
         )
         .await?;

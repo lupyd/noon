@@ -1,15 +1,15 @@
 use std::str::FromStr;
 
 use deadpool_postgres::{
-    tokio_postgres::{self, config::SslMode, NoTls},
     Manager,
+    tokio_postgres::{self, NoTls, config::SslMode},
 };
 
 use crate::email::Emailer;
 
+use noon_core::blind::BlindSigner;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use noon_core::blind::BlindSigner;
 
 pub struct RazorpayConfig {
     pub key_id: String,
@@ -17,8 +17,8 @@ pub struct RazorpayConfig {
     pub webhook_secret: String,
     /// Razorpay plan_id for the "pro" tier
     pub pro_plan_id: String,
-    /// Razorpay plan_id for the "enterprise" tier
-    pub enterprise_plan_id: String,
+    /// Razorpay plan_id for the "team" tier
+    pub team_plan_id: String,
 }
 
 pub struct AppConfig {
@@ -40,15 +40,15 @@ pub struct SubscriptionLimits {
     pub free_max_participants: usize,
     pub pro_max_forms: usize,
     pub pro_max_participants: usize,
-    pub enterprise_max_forms: usize,
-    pub enterprise_max_participants: usize,
+    pub team_max_forms: usize,
+    pub team_max_participants: usize,
 }
 
 impl SubscriptionLimits {
     pub fn max_forms_for(&self, tier: &str) -> usize {
         match tier {
             "pro" => self.pro_max_forms,
-            "enterprise" => self.enterprise_max_forms,
+            "team" => self.team_max_forms,
             _ => self.free_max_forms,
         }
     }
@@ -56,7 +56,7 @@ impl SubscriptionLimits {
     pub fn max_participants_for(&self, tier: &str) -> usize {
         match tier {
             "pro" => self.pro_max_participants,
-            "enterprise" => self.enterprise_max_participants,
+            "team" => self.team_max_participants,
             _ => self.free_max_participants,
         }
     }
@@ -93,20 +93,33 @@ impl SharedData {
                 .unwrap_or(false),
             auth_iss: var("AUTH_ISS").unwrap_or_else(|_| "noon.lupyd.com".to_string()),
             auth_aud: var("AUTH_AUD").unwrap_or_else(|_| "noon-api".to_string()),
-            frontend_url: var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:8080".to_string()),
+            frontend_url: var("FRONTEND_URL")
+                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
             limits: SubscriptionLimits {
                 free_max_forms: var("FREE_MAX_FORMS")
-                    .ok().and_then(|s| s.parse().ok()).unwrap_or(10),
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(10),
                 free_max_participants: var("FREE_MAX_PARTICIPANTS")
-                    .ok().and_then(|s| s.parse().ok()).unwrap_or(10),
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(10),
                 pro_max_forms: var("PRO_MAX_FORMS")
-                    .ok().and_then(|s| s.parse().ok()).unwrap_or(100),
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(100),
                 pro_max_participants: var("PRO_MAX_PARTICIPANTS")
-                    .ok().and_then(|s| s.parse().ok()).unwrap_or(100),
-                enterprise_max_forms: var("ENTERPRISE_MAX_FORMS")
-                    .ok().and_then(|s| s.parse().ok()).unwrap_or(1000),
-                enterprise_max_participants: var("ENTERPRISE_MAX_PARTICIPANTS")
-                    .ok().and_then(|s| s.parse().ok()).unwrap_or(1000),
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(100),
+                team_max_forms: var("TEAM_MAX_FORMS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1000),
+                team_max_participants: var("TEAM_MAX_PARTICIPANTS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1000),
             },
             smtp_pool_size: var("SMTP_POOL_SIZE")
                 .ok()
@@ -124,11 +137,13 @@ impl SharedData {
                         key_secret,
                         webhook_secret,
                         pro_plan_id: var("RAZORPAY_PRO_PLAN_ID").unwrap_or_default(),
-                        enterprise_plan_id: var("RAZORPAY_ENTERPRISE_PLAN_ID").unwrap_or_default(),
+                        team_plan_id: var("RAZORPAY_TEAM_PLAN_ID").unwrap_or_default(),
                     })
                 }
                 _ => {
-                    log::warn!("RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET not set. Subscription payments disabled.");
+                    log::warn!(
+                        "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET not set. Subscription payments disabled."
+                    );
                     None
                 }
             },

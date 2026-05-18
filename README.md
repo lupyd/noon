@@ -78,13 +78,18 @@ npm run dev
 | `AUTH_ISS` | No | `noon.lupyd.com` | JWT Issuer for email authentication |
 | `AUTH_AUD` | No | `noon-api` | JWT Audience for email authentication |
 | `FRONTEND_URL` | No | `http://localhost:8080` | Base URL of the frontend (used in emails) |
-| `MAX_PARTICIPANTS` | No | `10` | Maximum participants per form |
+| `FREE_MAX_FORMS` / `FREE_MAX_PARTICIPANTS` | No | `10` / `10` | Limits for free tier |
+| `PRO_MAX_FORMS` / `PRO_MAX_PARTICIPANTS` | No | `100` / `100` | Limits for pro tier |
+| `TEAM_MAX_FORMS` / `TEAM_MAX_PARTICIPANTS` | No | `1000` / `1000` | Limits for team tier |
 | `SKIP_EMAIL_SENDING` | No | `false` | If `true`, emails are logged to console instead of sent |
 | `SMTP_HOST` | No* | - | SMTP server address (Required if `SKIP_EMAIL_SENDING=false`) |
 | `SMTP_USERNAME` | No* | - | SMTP username (Required if `SKIP_EMAIL_SENDING=false`) |
 | `SMTP_PASSWORD` | No* | - | SMTP password (Required if `SKIP_EMAIL_SENDING=false`) |
 | `SMTP_FROM` | No* | - | "From" email address (Required if `SKIP_EMAIL_SENDING=false`) |
 | `SMTP_POOL_SIZE` | No | `4` | Number of concurrent email workers |
+| `SMTP_SEND_RATE_PER_SEC` | No | - | Maximum emails dispatched per second |
+| `RAZORPAY_KEY_ID` / `RAZORPAY_KEY_SECRET` / `RAZORPAY_WEBHOOK_SECRET` | No | - | Razorpay credentials for processing subscription payments |
+| `RAZORPAY_PRO_PLAN_ID` / `RAZORPAY_TEAM_PLAN_ID` | No | - | Razorpay plan IDs for pro and team tiers |
 | `EMULATOR_MODE` | No | `false` | Enable testing features |
 
 ### Frontend (Vite)
@@ -92,7 +97,6 @@ npm run dev
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `VITE_NOON_API_URL` | **Yes** | `http://localhost:39210` | Backend API URL |
-| `VITE_MAX_PARTICIPANTS`| No | `10` | UI limit for participant list |
 
 ## API Endpoints
 

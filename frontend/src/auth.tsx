@@ -1,4 +1,4 @@
-import React, { useState, useCallback, createContext, useContext } from 'react';
+import React, { useState, useEffect, useCallback, createContext, useContext } from 'react';
 import type { ReactNode } from 'react';
 import { API_URL } from './config';
 
@@ -30,6 +30,37 @@ export const UnifiedAuthProvider: React.FC<{ children: ReactNode }> = ({ childre
         localStorage.removeItem('noon_verified_email');
         localStorage.removeItem('noon_email_token');
     }, []);
+
+    useEffect(() => {
+        if (!token) return;
+
+        try {
+            const parts = token.split('.');
+            if (parts.length !== 3) return;
+
+            const base64 = parts[1].replace(/-/g, '+').replace(/_/g, '/');
+            const payload = JSON.parse(atob(base64));
+
+            if (payload.exp) {
+                const expiresAt = payload.exp * 1000;
+                const timeToExpiry = expiresAt - Date.now();
+
+                if (timeToExpiry <= 0) {
+                    alert("Your session has expired. Please log in again.");
+                    clearEmailAuth();
+                } else {
+                    const timeoutId = setTimeout(() => {
+                        alert("Your session has expired. Please log in again.");
+                        clearEmailAuth();
+                    }, timeToExpiry);
+
+                    return () => clearTimeout(timeoutId);
+                }
+            }
+        } catch (e) {
+            console.error("Failed to parse token", e);
+        }
+    }, [token, clearEmailAuth]);
 
     const logout = useCallback(() => {
         clearEmailAuth();

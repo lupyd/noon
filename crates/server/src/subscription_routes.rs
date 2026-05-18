@@ -26,6 +26,7 @@ pub async fn handle_request(
         (Method::POST, "/subscription/create") => create_subscription_route(req, sd).await,
         (Method::GET, "/subscription/status") => status_route(req, sd).await,
         (Method::POST, "/subscription/webhook") => webhook_route(req, sd).await,
+        (Method::GET, "/subscription/config") => config_route(req, sd).await,
         _ => Ok(not_found_response()),
     }
 }
@@ -107,7 +108,7 @@ fn verify_razorpay_signature(webhook_secret: &str, body: &[u8], signature: &str)
 // ─── Routes ──────────────────────────────────────────────────────────────────
 
 /// POST /subscription/create
-/// Body: {"tier": "pro"} or {"tier": "enterprise"}
+/// Body: {"tier": "pro"} or {"tier": "team"}
 /// Returns: {"subscription_id": "sub_xxx", "key_id": "rzp_test_xxx"}
 async fn create_subscription_route(
     req: Request<Incoming>,
@@ -139,11 +140,11 @@ async fn create_subscription_route(
     };
 
     let tier = match body.get("tier").and_then(|v| v.as_str()) {
-        Some(t) if t == "pro" || t == "enterprise" => t.to_string(),
+        Some(t) if t == "pro" || t == "team" => t.to_string(),
         _ => {
             return Ok(build_response(
                 StatusCode::BAD_REQUEST,
-                "tier must be \"pro\" or \"enterprise\"",
+                "tier must be \"pro\" or \"team\"",
             ))
         }
     };
@@ -151,7 +152,7 @@ async fn create_subscription_route(
     let plan_id = if tier == "pro" {
         rzp.pro_plan_id.clone()
     } else {
-        rzp.enterprise_plan_id.clone()
+        rzp.team_plan_id.clone()
     };
 
     if plan_id.is_empty() {
@@ -237,9 +238,10 @@ async fn status_route(
             let json = serde_json::json!({
                 "owner": info.owner,
                 "tier": info.tier,
-                "subscription_status": info.subscription_status,
+                "subscription_status": info.subscription_status.as_str(),
                 "razorpay_subscription_id": info.razorpay_subscription_id,
-                "current_period_end": info.current_period_end
+                "current_period_end": info.current_period_end,
+                "max_participants": sd.config.limits.max_participants_for(&info.tier)
             });
             Ok(ok_response(json.to_string()))
         }
@@ -303,14 +305,20 @@ async fn webhook_route(
         }
     };
 
+    if sub_entity.plan_id != rzp.pro_plan_id && sub_entity.plan_id != rzp.team_plan_id {
+        log::info!("Ignoring webhook event for unrelated plan_id: {}", sub_entity.plan_id);
+        return Ok(ok_response("OK"));
+    }
+
     match event.event.as_str() {
         "subscription.activated" | "subscription.charged" => {
             // Determine tier from plan_id
             let tier = if sub_entity.plan_id == rzp.pro_plan_id {
                 "pro"
-            } else if sub_entity.plan_id == rzp.enterprise_plan_id {
-                "enterprise"
+            } else if sub_entity.plan_id == rzp.team_plan_id {
+                "team"
             } else {
+                // Should be unreachable due to check above, but keeping for safety
                 log::warn!("Unknown plan_id in webhook: {}", sub_entity.plan_id);
                 return Ok(ok_response("OK"));
             };
@@ -384,4 +392,18 @@ async fn webhook_route(
     }
 
     Ok(ok_response("OK"))
+}
+
+/// GET /subscription/config
+/// Returns the tier configuration limits.
+async fn config_route(
+    _req: Request<Incoming>,
+    sd: Arc<SharedData>,
+) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
+    let json = serde_json::json!({
+        "free_max_participants": sd.config.limits.free_max_participants,
+        "pro_max_participants": sd.config.limits.pro_max_participants,
+        "team_max_participants": sd.config.limits.team_max_participants,
+    });
+    Ok(ok_response(json.to_string()))
 }

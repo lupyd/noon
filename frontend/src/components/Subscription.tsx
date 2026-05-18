@@ -8,36 +8,51 @@ interface SubscriptionStatus {
     subscription_status: string;
     razorpay_subscription_id: string | null;
     current_period_end: number | null;
+    max_participants: number;
+}
+
+interface SubscriptionConfig {
+    free_max_participants: number;
+    pro_max_participants: number;
+    team_max_participants: number;
 }
 
 export const Subscription: React.FC = () => {
     const { isAuthenticated, getAuthHeaders, email } = useUnifiedAuth();
     const [status, setStatus] = useState<SubscriptionStatus | null>(null);
+    const [config, setConfig] = useState<SubscriptionConfig | null>(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState<string | null>(null);
     const [error, setError] = useState<string | null>(null);
 
-    const fetchStatus = async () => {
-        if (!isAuthenticated) return;
+    const fetchStatusAndConfig = async () => {
         try {
-            const headers = await getAuthHeaders();
-            const resp = await fetch(`${API_URL}/subscription/status`, { headers });
-            if (resp.ok) {
-                const data = await resp.json();
-                setStatus(data);
+            const configResp = await fetch(`${API_URL}/subscription/config`);
+            if (configResp.ok) {
+                const configData = await configResp.json();
+                setConfig(configData);
+            }
+
+            if (isAuthenticated) {
+                const headers = await getAuthHeaders();
+                const resp = await fetch(`${API_URL}/subscription/status`, { headers });
+                if (resp.ok) {
+                    const data = await resp.json();
+                    setStatus(data);
+                }
             }
         } catch (e) {
-            console.error("Failed to fetch subscription status", e);
+            console.error("Failed to fetch subscription status or config", e);
         } finally {
             setLoading(false);
         }
     };
 
     useEffect(() => {
-        fetchStatus();
+        fetchStatusAndConfig();
     }, [isAuthenticated]);
 
-    const handleSubscribe = async (tier: 'pro' | 'enterprise') => {
+    const handleSubscribe = async (tier: 'pro' | 'team') => {
         setSubmitting(tier);
         setError(null);
         try {
@@ -63,10 +78,10 @@ export const Subscription: React.FC = () => {
                 subscription_id: subscription_id,
                 name: "Noon Forms",
                 description: `Upgrade to ${tier.toUpperCase()} Plan`,
-                handler: function (response: any) {
+                handler: function (_response: any) {
                     // Payment successful
                     alert("Payment successful! Your subscription will be activated shortly.");
-                    fetchStatus();
+                    fetchStatusAndConfig();
                 },
                 prefill: {
                     email: email || ""
@@ -140,7 +155,7 @@ export const Subscription: React.FC = () => {
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> 10 Forms
                         </li>
                         <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
-                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> 10 Participants/Form
+                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> {config ? config.free_max_participants : 10} Participants/Form
                         </li>
                     </ul>
                     <button className="secondary-button" disabled style={{ width: '100%' }}>
@@ -167,7 +182,7 @@ export const Subscription: React.FC = () => {
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> 100 Forms
                         </li>
                         <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
-                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> 100 Participants/Form
+                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> {config ? config.pro_max_participants : 100} Participants/Form
                         </li>
                         <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> Analytics Dashboard
@@ -183,16 +198,16 @@ export const Subscription: React.FC = () => {
                     </button>
                 </div>
 
-                {/* Enterprise Plan */}
-                <div className="card" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', border: status?.tier === 'enterprise' ? '2px solid var(--accent)' : '1px solid var(--border)', position: 'relative' }}>
-                    {status?.tier === 'enterprise' && (
+                {/* Team Plan */}
+                <div className="card" style={{ padding: '2rem', display: 'flex', flexDirection: 'column', border: status?.tier === 'team' ? '2px solid var(--accent)' : '1px solid var(--border)', position: 'relative' }}>
+                    {status?.tier === 'team' && (
                         <div style={{ position: 'absolute', top: '-12px', right: '20px', background: 'var(--accent)', color: 'white', padding: '2px 10px', borderRadius: '10px', fontSize: '0.8rem' }}>
                             Current
                         </div>
                     )}
                     <div style={{ marginBottom: '1.5rem' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                            <h3 style={{ margin: 0 }}>Enterprise</h3>
+                            <h3 style={{ margin: 0 }}>Team</h3>
                             <ShieldCheck size={18} style={{ color: 'var(--accent)' }} />
                         </div>
                         <div style={{ fontSize: '2rem', fontWeight: 'bold', margin: '0.5rem 0' }}>₹1,999<span style={{ fontSize: '1rem', fontWeight: 'normal' }}>/mo</span></div>
@@ -202,7 +217,7 @@ export const Subscription: React.FC = () => {
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> 1,000 Forms
                         </li>
                         <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
-                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> 1,000 Participants/Form
+                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> {config ? config.team_max_participants : 1000} Participants/Form
                         </li>
                         <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> Priority Support
@@ -210,11 +225,11 @@ export const Subscription: React.FC = () => {
                     </ul>
                     <button 
                         className="primary-button" 
-                        disabled={submitting !== null || status?.tier === 'enterprise'}
-                        onClick={() => handleSubscribe('enterprise')}
+                        disabled={submitting !== null || status?.tier === 'team'}
+                        onClick={() => handleSubscribe('team')}
                         style={{ width: '100%', background: 'var(--text)', color: 'var(--bg)' }}
                     >
-                        {submitting === 'enterprise' ? <Loader2 className="spinner" size={18} /> : (status?.tier === 'enterprise' ? 'Active' : 'Get Enterprise')}
+                        {submitting === 'team' ? <Loader2 className="spinner" size={18} /> : (status?.tier === 'team' ? 'Active' : 'Get Team')}
                     </button>
                 </div>
             </div>
