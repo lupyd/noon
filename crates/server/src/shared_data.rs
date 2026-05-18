@@ -1,15 +1,25 @@
 use std::str::FromStr;
 
 use deadpool_postgres::{
-    tokio_postgres::{self, config::SslMode, NoTls},
     Manager,
+    tokio_postgres::{self, NoTls, config::SslMode},
 };
 
 use crate::email::Emailer;
 
+use noon_core::blind::BlindSigner;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use noon_core::blind::BlindSigner;
+
+pub struct RazorpayConfig {
+    pub key_id: String,
+    pub key_secret: String,
+    pub webhook_secret: String,
+    /// Razorpay plan_id for the "pro" tier
+    pub pro_plan_id: String,
+    /// Razorpay plan_id for the "team" tier
+    pub team_plan_id: String,
+}
 
 pub struct AppConfig {
     pub db_conn_str: String,
@@ -19,8 +29,37 @@ pub struct AppConfig {
     pub auth_iss: String,
     pub auth_aud: String,
     pub frontend_url: String,
-    pub max_participants: usize,
+    pub limits: SubscriptionLimits,
     pub smtp_pool_size: usize,
+    /// None when RAZORPAY_KEY_ID env var is not set
+    pub razorpay: Option<RazorpayConfig>,
+}
+
+pub struct SubscriptionLimits {
+    pub free_max_forms: usize,
+    pub free_max_participants: usize,
+    pub pro_max_forms: usize,
+    pub pro_max_participants: usize,
+    pub team_max_forms: usize,
+    pub team_max_participants: usize,
+}
+
+impl SubscriptionLimits {
+    pub fn max_forms_for(&self, tier: &str) -> usize {
+        match tier {
+            "pro" => self.pro_max_forms,
+            "team" => self.team_max_forms,
+            _ => self.free_max_forms,
+        }
+    }
+
+    pub fn max_participants_for(&self, tier: &str) -> usize {
+        match tier {
+            "pro" => self.pro_max_participants,
+            "team" => self.team_max_participants,
+            _ => self.free_max_participants,
+        }
+    }
 }
 
 pub struct KeyCache {
@@ -34,6 +73,7 @@ pub struct SharedData {
     pub db: deadpool_postgres::Pool,
     pub emailer: Option<Emailer>,
     pub cache: KeyCache,
+    pub http_client: reqwest::Client,
 }
 
 use std::time::SystemTime;
@@ -53,15 +93,60 @@ impl SharedData {
                 .unwrap_or(false),
             auth_iss: var("AUTH_ISS").unwrap_or_else(|_| "noon.lupyd.com".to_string()),
             auth_aud: var("AUTH_AUD").unwrap_or_else(|_| "noon-api".to_string()),
-            frontend_url: var("FRONTEND_URL").unwrap_or_else(|_| "http://localhost:8080".to_string()),
-            max_participants: var("MAX_PARTICIPANTS")
-                .ok()
-                .and_then(|s| s.parse().ok())
-                .unwrap_or(10),
+            frontend_url: var("FRONTEND_URL")
+                .unwrap_or_else(|_| "http://localhost:8080".to_string()),
+            limits: SubscriptionLimits {
+                free_max_forms: var("FREE_MAX_FORMS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(10),
+                free_max_participants: var("FREE_MAX_PARTICIPANTS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(10),
+                pro_max_forms: var("PRO_MAX_FORMS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(100),
+                pro_max_participants: var("PRO_MAX_PARTICIPANTS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(100),
+                team_max_forms: var("TEAM_MAX_FORMS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1000),
+                team_max_participants: var("TEAM_MAX_PARTICIPANTS")
+                    .ok()
+                    .and_then(|s| s.parse().ok())
+                    .unwrap_or(1000),
+            },
             smtp_pool_size: var("SMTP_POOL_SIZE")
                 .ok()
                 .and_then(|s| s.parse().ok())
                 .unwrap_or(4),
+            razorpay: match (
+                var("RAZORPAY_KEY_ID"),
+                var("RAZORPAY_KEY_SECRET"),
+                var("RAZORPAY_WEBHOOK_SECRET"),
+            ) {
+                (Ok(key_id), Ok(key_secret), Ok(webhook_secret)) => {
+                    log::info!("Razorpay integration enabled.");
+                    Some(RazorpayConfig {
+                        key_id,
+                        key_secret,
+                        webhook_secret,
+                        pro_plan_id: var("RAZORPAY_PRO_PLAN_ID").unwrap_or_default(),
+                        team_plan_id: var("RAZORPAY_TEAM_PLAN_ID").unwrap_or_default(),
+                    })
+                }
+                _ => {
+                    log::warn!(
+                        "RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET / RAZORPAY_WEBHOOK_SECRET not set. Subscription payments disabled."
+                    );
+                    None
+                }
+            },
         };
 
         let pool = build_pool(&config);
@@ -94,6 +179,7 @@ impl SharedData {
                 jwt_secret: RwLock::new(None),
                 jwt_recent_secrets: RwLock::new(None),
             },
+            http_client: reqwest::Client::new(),
         }
     }
 }

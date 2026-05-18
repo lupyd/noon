@@ -1,8 +1,10 @@
 use anyhow::Result;
+use governor::{Quota, RateLimiter};
 use lettre::message::{Mailbox, MultiPart, SinglePart};
 use lettre::transport::smtp::authentication::Credentials;
 use lettre::transport::smtp::{AsyncSmtpTransport, PoolConfig};
 use lettre::{AsyncTransport, Message, Tokio1Executor};
+use std::num::NonZeroU32;
 use std::sync::Arc;
 use tokio::sync::{Semaphore, mpsc};
 
@@ -29,11 +31,21 @@ impl Emailer {
         let semaphore = Arc::new(Semaphore::new(pool_size));
 
         // Start background manager
+        let rate_limit: Option<u32> = std::env::var("SMTP_SEND_RATE_PER_SEC")
+            .ok()
+            .and_then(|v| v.parse().ok());
+
+        let limiter = rate_limit
+            .and_then(|rate| NonZeroU32::new(rate))
+            .map(|rate| Arc::new(RateLimiter::direct(Quota::per_second(rate))));
+
         tokio::spawn(async move {
             log::info!(
-                "Email background worker pool started with size: {}",
-                pool_size
+                "Email background worker pool started with size: {}, rate limit: {:?}",
+                pool_size,
+                rate_limit
             );
+
             while let Some(email) = receiver.recv().await {
                 // Wait for an available worker slot (semaphore permit)
                 let permit = match semaphore.clone().acquire_owned().await {
@@ -42,7 +54,11 @@ impl Emailer {
                 };
 
                 let transport = transport.clone();
+                let limiter = limiter.clone();
                 tokio::spawn(async move {
+                    if let Some(lim) = limiter {
+                        lim.until_ready().await;
+                    }
                     match transport.send(email).await {
                         Ok(_) => log::debug!("Background email sent successfully"),
                         Err(e) => log::error!("Failed to send background email: {}", e),
