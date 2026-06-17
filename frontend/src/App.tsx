@@ -1,6 +1,6 @@
 import React, { useState, lazy, Suspense } from 'react';
 import { BrowserRouter as Router, Routes, Route, Link, Navigate, useNavigate } from 'react-router-dom';
-import { LogOut, Loader2, Lock, MessageSquare, Cpu, ShieldCheck, BarChart3, Key, ChevronDown, ChevronUp, Globe } from 'lucide-react';
+import { LogOut, Loader2, Lock, MessageSquare, Cpu, ShieldCheck, BarChart3, Key, ChevronDown, ChevronUp } from 'lucide-react';
 import { SunLogo } from './components/logo';
 import { UnifiedAuthProvider, useUnifiedAuth } from './auth';
 import { ThemeProvider } from './ThemeContext';
@@ -207,45 +207,7 @@ function About() {
         </div>
       </div>
 
-      {/* SEO STRATEGY SECTION (Matching Reference Image) */}
-      <div className="seo-strategy-section">
-        <h3 className="section-title-uppercase">SEO STRATEGY</h3>
-        <div className="seo-strategy-card">
-          <div className="seo-strategy-header">
-            <div className="seo-strategy-icon">
-              <Globe size={20} />
-            </div>
-            <h4>Target keywords</h4>
-          </div>
 
-          <div className="keywords-grid">
-            <div className="keyword-item-card">
-              <div className="keyword-name">anonymous feedback forms</div>
-              <div className="keyword-meta">High Intent, core use case</div>
-            </div>
-            <div className="keyword-item-card">
-              <div className="keyword-name">untraceable employee surveys</div>
-              <div className="keyword-meta">B2B, HR teams</div>
-            </div>
-            <div className="keyword-item-card">
-              <div className="keyword-name">truly anonymous survey tool</div>
-              <div className="keyword-meta">Differentiator keyword</div>
-            </div>
-            <div className="keyword-item-card">
-              <div className="keyword-name">blind signature feedback app</div>
-              <div className="keyword-meta">Technical audience</div>
-            </div>
-            <div className="keyword-item-card">
-              <div className="keyword-name">honest workplace feedback</div>
-              <div className="keyword-meta">High volume, culture-driven</div>
-            </div>
-            <div className="keyword-item-card">
-              <div className="keyword-name">secure anonymous forms</div>
-              <div className="keyword-meta">Privacy-conscious users</div>
-            </div>
-          </div>
-        </div>
-      </div>
     </div>
   );
 }
