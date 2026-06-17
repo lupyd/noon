@@ -129,4 +129,4 @@ While Noon uses strong cryptography, true anonymity in a web environment is chal
 
 ## License
 
-MIT
+PolyForm Noncommercial License 1.0.0 (see [LICENSE](file:///old-arch/home/ash/lupyd-foundation/noon/LICENSE)).
