@@ -73,6 +73,41 @@ impl<'a> From<&'a str> for FieldType {
     }
 }
 
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum ParticipantMode {
+    LIST_OF_EMAILS = 0,
+    ANY_WITH_EMAIL = 1,
+    NO_EMAIL_REQUIRED = 2,
+}
+
+impl Default for ParticipantMode {
+    fn default() -> Self {
+        ParticipantMode::LIST_OF_EMAILS
+    }
+}
+
+impl From<i32> for ParticipantMode {
+    fn from(i: i32) -> Self {
+        match i {
+            0 => ParticipantMode::LIST_OF_EMAILS,
+            1 => ParticipantMode::ANY_WITH_EMAIL,
+            2 => ParticipantMode::NO_EMAIL_REQUIRED,
+            _ => Self::default(),
+        }
+    }
+}
+
+impl<'a> From<&'a str> for ParticipantMode {
+    fn from(s: &'a str) -> Self {
+        match s {
+            "LIST_OF_EMAILS" => ParticipantMode::LIST_OF_EMAILS,
+            "ANY_WITH_EMAIL" => ParticipantMode::ANY_WITH_EMAIL,
+            "NO_EMAIL_REQUIRED" => ParticipantMode::NO_EMAIL_REQUIRED,
+            _ => Self::default(),
+        }
+    }
+}
+
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct Option_pb<'a> {
@@ -161,6 +196,10 @@ pub struct Form<'a> {
     pub fields: Vec<mod_Form::Field<'a>>,
     pub allowed_participants: Vec<Cow<'a, str>>,
     pub deadline: u64,
+    pub participant_mode: ParticipantMode,
+    pub participant_cap: u64,
+    pub submission_reply_message: Cow<'a, str>,
+    pub submission_count: u64,
 }
 
 impl<'a> MessageRead<'a> for Form<'a> {
@@ -177,6 +216,10 @@ impl<'a> MessageRead<'a> for Form<'a> {
                 Ok(66) => msg.fields.push(r.read_message::<mod_Form::Field>(bytes)?),
                 Ok(82) => msg.allowed_participants.push(r.read_string(bytes).map(Cow::Borrowed)?),
                 Ok(104) => msg.deadline = r.read_uint64(bytes)?,
+                Ok(112) => msg.participant_mode = r.read_enum(bytes)?,
+                Ok(120) => msg.participant_cap = r.read_uint64(bytes)?,
+                Ok(130) => msg.submission_reply_message = r.read_string(bytes).map(Cow::Borrowed)?,
+                Ok(136) => msg.submission_count = r.read_uint64(bytes)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -197,6 +240,10 @@ impl<'a> MessageWrite for Form<'a> {
         + self.fields.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
         + self.allowed_participants.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
         + if self.deadline == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.deadline) as u64) }
+        + if self.participant_mode == forms::ParticipantMode::LIST_OF_EMAILS { 0 } else { 1 + sizeof_varint(*(&self.participant_mode) as u64) }
+        + if self.participant_cap == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.participant_cap) as u64) }
+        + if self.submission_reply_message == "" { 0 } else { 2 + sizeof_len((&self.submission_reply_message).len()) }
+        + if self.submission_count == 0u64 { 0 } else { 2 + sizeof_varint(*(&self.submission_count) as u64) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
@@ -209,6 +256,10 @@ impl<'a> MessageWrite for Form<'a> {
         for s in &self.fields { w.write_with_tag(66, |w| w.write_message(s))?; }
         for s in &self.allowed_participants { w.write_with_tag(82, |w| w.write_string(&**s))?; }
         if self.deadline != 0u64 { w.write_with_tag(104, |w| w.write_uint64(*&self.deadline))?; }
+        if self.participant_mode != forms::ParticipantMode::LIST_OF_EMAILS { w.write_with_tag(112, |w| w.write_enum(*&self.participant_mode as i32))?; }
+        if self.participant_cap != 0u64 { w.write_with_tag(120, |w| w.write_uint64(*&self.participant_cap))?; }
+        if self.submission_reply_message != "" { w.write_with_tag(130, |w| w.write_string(&**&self.submission_reply_message))?; }
+        if self.submission_count != 0u64 { w.write_with_tag(136, |w| w.write_uint64(*&self.submission_count))?; }
         Ok(())
     }
 }
@@ -592,6 +643,7 @@ pub struct FormResults<'a> {
     pub submissions: Vec<FormSubmission<'a>>,
     pub form: Option<Form<'a>>,
     pub total_submissions: u64,
+    pub submitter_emails: Vec<Cow<'a, str>>,
 }
 
 impl<'a> MessageRead<'a> for FormResults<'a> {
@@ -602,6 +654,7 @@ impl<'a> MessageRead<'a> for FormResults<'a> {
                 Ok(10) => msg.submissions.push(r.read_message::<FormSubmission>(bytes)?),
                 Ok(18) => msg.form = Some(r.read_message::<Form>(bytes)?),
                 Ok(24) => msg.total_submissions = r.read_uint64(bytes)?,
+                Ok(34) => msg.submitter_emails.push(r.read_string(bytes).map(Cow::Borrowed)?),
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -616,12 +669,14 @@ impl<'a> MessageWrite for FormResults<'a> {
         + self.submissions.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
         + self.form.as_ref().map_or(0, |m| 1 + sizeof_len((m).get_size()))
         + if self.total_submissions == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.total_submissions) as u64) }
+        + self.submitter_emails.iter().map(|s| 1 + sizeof_len((s).len())).sum::<usize>()
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
         for s in &self.submissions { w.write_with_tag(10, |w| w.write_message(s))?; }
         if let Some(ref s) = self.form { w.write_with_tag(18, |w| w.write_message(s))?; }
         if self.total_submissions != 0u64 { w.write_with_tag(24, |w| w.write_uint64(*&self.total_submissions))?; }
+        for s in &self.submitter_emails { w.write_with_tag(34, |w| w.write_string(&**s))?; }
         Ok(())
     }
 }
@@ -630,6 +685,8 @@ impl<'a> MessageWrite for FormResults<'a> {
 #[derive(Debug, Default, PartialEq, Clone)]
 pub struct UserForms<'a> {
     pub forms: Vec<Form<'a>>,
+    pub total_forms: u64,
+    pub total_submissions: u64,
 }
 
 impl<'a> MessageRead<'a> for UserForms<'a> {
@@ -638,6 +695,8 @@ impl<'a> MessageRead<'a> for UserForms<'a> {
         while !r.is_eof() {
             match r.next_tag(bytes) {
                 Ok(10) => msg.forms.push(r.read_message::<Form>(bytes)?),
+                Ok(16) => msg.total_forms = r.read_uint64(bytes)?,
+                Ok(24) => msg.total_submissions = r.read_uint64(bytes)?,
                 Ok(t) => { r.read_unknown(bytes, t)?; }
                 Err(e) => return Err(e),
             }
@@ -650,10 +709,14 @@ impl<'a> MessageWrite for UserForms<'a> {
     fn get_size(&self) -> usize {
         0
         + self.forms.iter().map(|s| 1 + sizeof_len((s).get_size())).sum::<usize>()
+        + if self.total_forms == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.total_forms) as u64) }
+        + if self.total_submissions == 0u64 { 0 } else { 1 + sizeof_varint(*(&self.total_submissions) as u64) }
     }
 
     fn write_message<W: WriterBackend>(&self, w: &mut Writer<W>) -> Result<()> {
         for s in &self.forms { w.write_with_tag(10, |w| w.write_message(s))?; }
+        if self.total_forms != 0u64 { w.write_with_tag(16, |w| w.write_uint64(*&self.total_forms))?; }
+        if self.total_submissions != 0u64 { w.write_with_tag(24, |w| w.write_uint64(*&self.total_submissions))?; }
         Ok(())
     }
 }

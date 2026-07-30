@@ -106,3 +106,44 @@ pub fn string_to_number(s: &str) -> Option<u64> {
 
     Some(n)
 }
+
+
+use bytes::{BufMut, Bytes, BytesMut};
+use quick_protobuf::{BytesReader, MessageRead, MessageWrite, Writer};
+
+pub fn serialize_proto<T>(message: &T) -> Result<Bytes, quick_protobuf::Error>
+where
+    T: MessageWrite + Sized,
+{
+    let mut writer = BytesMut::new().writer();
+    message.write_message(&mut Writer::new(&mut writer))?;
+    Ok(writer.into_inner().freeze())
+}
+
+pub fn deserialize_proto<'a, 'b: 'a, T>(bytes: &'b [u8]) -> Result<T, quick_protobuf::Error>
+where
+    T: MessageRead<'a> + Sized,
+{
+    T::from_reader(&mut BytesReader::from_bytes(bytes), &bytes)
+}
+
+pub fn sanitize_reply_message(message: &str) -> String {
+    let contains_html = message.contains('<') && message.contains('>');
+    if contains_html {
+        ammonia::clean(message)
+    } else {
+        let mut escaped = String::new();
+        for c in message.chars() {
+            match c {
+                '<' => escaped.push_str("&lt;"),
+                '>' => escaped.push_str("&gt;"),
+                '&' => escaped.push_str("&amp;"),
+                '"' => escaped.push_str("&quot;"),
+                '\'' => escaped.push_str("&#x27;"),
+                '/' => escaped.push_str("&#x2F;"),
+                _ => escaped.push(c),
+            }
+        }
+        escaped.replace("\n", "<br />")
+    }
+}

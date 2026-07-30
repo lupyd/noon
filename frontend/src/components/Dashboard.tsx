@@ -23,6 +23,10 @@ import {
 export const Dashboard: React.FC = () => {
   const { isAuthenticated, getAuthHeaders, isInitialLoading, clearEmailAuth, email: userEmail } = useUnifiedAuth();
   const [forms, setForms] = useState<FormType[]>([]);
+  const [totalForms, setTotalForms] = useState(0);
+  const [totalSubmissions, setTotalSubmissions] = useState(0);
+  const [page, setPage] = useState(1);
+  const limit = 10;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -40,7 +44,7 @@ export const Dashboard: React.FC = () => {
     try {
       const headers = await getAuthHeaders();
 
-      const res = await fetch(`${API_URL}/forms`, { headers });
+      const res = await fetch(`${API_URL}/forms?page=${page}&limit=${limit}`, { headers });
       
       if (res.status === 401) {
           clearEmailAuth();
@@ -52,6 +56,8 @@ export const Dashboard: React.FC = () => {
       const buffer = await res.arrayBuffer();
       const decoded = decodeUserForms(new Uint8Array(buffer));
       setForms(decoded.forms);
+      setTotalForms(decoded.totalForms || 0);
+      setTotalSubmissions(decoded.totalSubmissions || 0);
     } catch (err) {
       setError((err as Error).message);
     } finally {
@@ -61,7 +67,7 @@ export const Dashboard: React.FC = () => {
 
   useEffect(() => {
     fetchForms();
-  }, [isAuthenticated, isInitialLoading]);
+  }, [isAuthenticated, isInitialLoading, page]);
 
   if (loading) return (
     <div className="loading-container" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '60vh' }}>
@@ -101,11 +107,11 @@ export const Dashboard: React.FC = () => {
       <div className="dashboard-stats" style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '2rem', marginBottom: '4rem' }}>
         <div className="stat-card card">
           <span className="text-muted" style={{ fontSize: '0.875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Active Forms</span>
-          <div style={{ fontSize: '2.5rem', fontWeight: 900, marginTop: '0.5rem' }}>{forms.length}</div>
+          <div style={{ fontSize: '2.5rem', fontWeight: 900, marginTop: '0.5rem' }}>{totalForms}</div>
         </div>
         <div className="stat-card card">
           <span className="text-muted" style={{ fontSize: '0.875rem', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Total Responses</span>
-          <div style={{ fontSize: '2.5rem', fontWeight: 900, marginTop: '0.5rem' }}>-</div>
+          <div style={{ fontSize: '2.5rem', fontWeight: 900, marginTop: '0.5rem' }}>{totalSubmissions}</div>
         </div>
       </div>
 
@@ -130,7 +136,7 @@ export const Dashboard: React.FC = () => {
                       <Clock size={14} /> Created {new Date(Number(form.createdAt) * 1000).toLocaleDateString()}
                     </span>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                      <Inbox size={14} /> No responses yet
+                      <Inbox size={14} /> {form.submissionCount || 0} {form.submissionCount === 1 ? 'response' : 'responses'}
                     </span>
                   </div>
                 </div>
@@ -155,6 +161,31 @@ export const Dashboard: React.FC = () => {
               <h4 style={{ fontSize: '1.5rem', marginBottom: '1rem' }}>No forms found</h4>
               <p className="text-muted" style={{ marginBottom: '2.5rem' }}>You haven't deployed any secure forms yet.</p>
               <Link to="/create" className="secondary-button">Deploy Your First Form</Link>
+            </div>
+          )}
+
+          {/* Pagination */}
+          {totalForms > limit && (
+            <div className="pagination" style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '2rem', marginTop: '3rem' }}>
+              <button
+                className="secondary-button"
+                disabled={page === 1}
+                onClick={() => setPage(p => p - 1)}
+                style={{ padding: '0.75rem 1.5rem' }}
+              >
+                Previous
+              </button>
+              <span style={{ fontWeight: 700, color: 'var(--text)' }}>
+                Page <span style={{ color: 'var(--accent)' }}>{page}</span> of {Math.ceil(totalForms / limit)}
+              </span>
+              <button
+                className="secondary-button"
+                disabled={page >= Math.ceil(totalForms / limit)}
+                onClick={() => setPage(p => p + 1)}
+                style={{ padding: '0.75rem 1.5rem' }}
+              >
+                Next
+              </button>
             </div>
           )}
         </div>

@@ -3,7 +3,6 @@ use deadpool_postgres::Pool;
 use deadpool_postgres::tokio_postgres::types::Type;
 use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use noon_core::blind::BlindSigner;
-use quick_protobuf::{MessageRead, MessageWrite};
 use rsa::pkcs8::{DecodePrivateKey, EncodePrivateKey};
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
@@ -32,7 +31,7 @@ pub async fn get_or_create_blind_signer(sd: &SharedData) -> anyhow::Result<Arc<B
         .await?;
     let row = rows.into_iter().next();
     if let Some(row) = row {
-        let rsa_key_bytes: Vec<u8> = row.get(0);
+        let rsa_key_bytes: Vec<u8> = row.try_get(0)?;
         let private_key = rsa::RsaPrivateKey::from_pkcs8_der(&rsa_key_bytes)
             .context("Failed to parse pkcs8 der from db")?;
         let signer = Arc::new(BlindSigner::new(private_key));
@@ -63,9 +62,7 @@ pub async fn get_or_create_blind_signer(sd: &SharedData) -> anyhow::Result<Arc<B
 pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyhow::Result<u64> {
     let client = pool.get().await?;
 
-    let mut out = Vec::new();
-    let mut writer = quick_protobuf::Writer::new(&mut out);
-    form.write_message(&mut writer)?;
+    let out = crate::utils::serialize_proto(&form)?;
 
     let allowed_participants: Vec<&str> = form
         .allowed_participants
@@ -79,9 +76,13 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
         Some(SystemTime::UNIX_EPOCH + std::time::Duration::from_secs(form.deadline))
     };
 
-    let stmt = "INSERT INTO forms (name, description, owner, fields, mentioned_emails, deadline) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id";
+    let stmt = "INSERT INTO forms (name, description, owner, fields, mentioned_emails, deadline, participant_mode, participant_cap, submission_reply_message) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING id";
     let name_str = form.name.to_string();
     let desc_str = form.description.to_string();
+    let out_ref = out.as_ref();
+    let p_mode = form.participant_mode as i16;
+    let p_cap = form.participant_cap as i32;
+    let reply_msg = form.submission_reply_message.to_string();
     let rows = client
         .query_typed(
             stmt,
@@ -89,9 +90,12 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
                 (&name_str, Type::VARCHAR),
                 (&desc_str, Type::TEXT),
                 (&owner, Type::VARCHAR),
-                (&out, Type::BYTEA),
+                (&out_ref, Type::BYTEA),
                 (&allowed_participants, Type::TEXT_ARRAY),
                 (&deadline, Type::TIMESTAMPTZ),
+                (&p_mode, Type::INT2),
+                (&p_cap, Type::INT4),
+                (&reply_msg, Type::VARCHAR),
             ],
         )
         .await?;
@@ -100,7 +104,7 @@ pub async fn create_form(pool: &Pool, mut form: Form<'_>, owner: String) -> anyh
         .next()
         .context("Failed to get id from insert")?;
 
-    let form_id: i64 = row.get(0);
+    let form_id: i64 = row.try_get(0)?;
     form.id = form_id as u64;
 
     for participant in &form.allowed_participants {
@@ -130,22 +134,28 @@ pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>
     let form_id_i64 = form_id as i64;
     let rows = client
         .query_typed(
-            "SELECT name, description, owner, fields, extract(epoch from created_at)::bigint as created_at, mentioned_emails, extract(epoch from deadline)::bigint as deadline FROM forms WHERE id = $1",
+            "SELECT name, description, owner, fields, extract(epoch from created_at)::bigint as created_at, \
+             mentioned_emails, extract(epoch from deadline)::bigint as deadline, \
+             participant_mode, participant_cap, submission_reply_message, submission_count \
+             FROM forms WHERE id = $1",
             &[(&form_id_i64, Type::INT8)],
         )
         .await?;
     let row = rows.into_iter().next().context("Form not found")?;
 
-    let name: String = row.get(0);
-    let description: String = row.get(1);
-    let owner: String = row.get(2);
-    let bytes: Vec<u8> = row.get(3);
-    let created_at: i64 = row.get(4);
-    let mentioned_emails: Vec<String> = row.get(5);
-    let deadline: Option<i64> = row.get(6);
+    let name: String = row.try_get(0)?;
+    let description: String = row.try_get(1)?;
+    let owner: String = row.try_get(2)?;
+    let bytes: Vec<u8> = row.try_get(3)?;
+    let created_at: i64 = row.try_get(4)?;
+    let mentioned_emails: Vec<String> = row.try_get(5)?;
+    let deadline: Option<i64> = row.try_get(6)?;
+    let p_mode: i16 = row.try_get(7)?;
+    let p_cap: i32 = row.try_get(8)?;
+    let reply_msg: String = row.try_get(9)?;
+    let sub_count: i32 = row.try_get(10)?;
 
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&bytes);
-    let parsed_form = Form::from_reader(&mut reader, &bytes).unwrap_or_default();
+    let parsed_form = crate::utils::deserialize_proto::<Form>(&bytes).unwrap_or_default();
 
     let mut form = parsed_form;
     form.id = form_id;
@@ -155,6 +165,10 @@ pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>
     form.created_at = created_at as u64;
     form.allowed_participants = mentioned_emails.into_iter().map(|s| s.into()).collect();
     form.deadline = deadline.unwrap_or(0) as u64;
+    form.participant_mode = crate::pb::forms::ParticipantMode::from(p_mode as i32);
+    form.participant_cap = p_cap as u64;
+    form.submission_reply_message = reply_msg.into();
+    form.submission_count = sub_count as u64;
 
     let form_id_i64 = form_id as i64;
     let rows = client
@@ -163,19 +177,16 @@ pub async fn get_form_bytes(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<u8>
             &[(&form_id_i64, Type::INT8)],
         )
         .await?;
-    form.allowed_participants = rows
-        .into_iter()
-        .map(|r| {
-            let p: String = r.get(0);
-            p.into()
-        })
-        .collect();
+    let mut allowed_participants = Vec::new();
+    for r in rows {
+        let p: String = r.try_get(0)?;
+        allowed_participants.push(p.into());
+    }
+    form.allowed_participants = allowed_participants;
 
-    let mut final_out = Vec::new();
-    let mut writer = quick_protobuf::Writer::new(&mut final_out);
-    form.write_message(&mut writer)?;
+    let final_out = crate::utils::serialize_proto(&form)?;
 
-    Ok(final_out)
+    Ok(final_out.to_vec())
 }
 
 pub async fn check_and_mark_participant_accepted(
@@ -195,7 +206,7 @@ pub async fn check_and_mark_participant_accepted(
         .await?;
     let row = rows.into_iter().next();
     if let Some(r) = row {
-        let accepted: bool = r.get(0);
+        let accepted: bool = r.try_get(0)?;
         if accepted {
             return Ok(false); // already accepted
         }
@@ -216,15 +227,14 @@ pub async fn check_and_mark_participant_accepted(
 pub async fn submit_form(pool: &Pool, submission: FormSubmission<'_>) -> anyhow::Result<()> {
     let client = pool.get().await?;
 
-    let mut out = Vec::new();
-    let mut writer = quick_protobuf::Writer::new(&mut out);
-    submission.write_message(&mut writer)?;
+    let out = crate::utils::serialize_proto(&submission)?;
 
     let form_id_i64 = submission.form_id as i64;
+    let out_ref = out.as_ref();
     client
         .query_typed(
             "INSERT INTO form_submissions (form_id, data) VALUES ($1, $2)",
-            &[(&form_id_i64, Type::INT8), (&out, Type::BYTEA)],
+            &[(&form_id_i64, Type::INT8), (&out_ref, Type::BYTEA)],
         )
         .await?;
 
@@ -246,38 +256,61 @@ pub async fn get_form_submissions(
         )
         .await?;
 
-    Ok(rows.into_iter().map(|r| r.get(0)).collect())
+    let mut results = Vec::new();
+    for r in rows {
+        results.push(r.try_get(0)?);
+    }
+    Ok(results)
 }
 
-pub async fn get_forms_by_owner(pool: &Pool, owner: &str) -> anyhow::Result<Vec<Vec<u8>>> {
+pub async fn get_forms_by_owner(
+    pool: &Pool,
+    owner: &str,
+    limit: i64,
+    offset: i64,
+) -> anyhow::Result<Vec<Vec<u8>>> {
     let client = pool.get().await?;
     let owner_str = owner.to_string();
     let rows = client
         .query_typed(
-            "SELECT id, name, description, extract(epoch from created_at)::bigint as created_at, extract(epoch from deadline)::bigint as deadline FROM forms WHERE owner = $1 ORDER BY created_at DESC",
-            &[(&owner_str, Type::VARCHAR)],
+            "SELECT id, name, description, extract(epoch from created_at)::bigint as created_at, \
+             extract(epoch from deadline)::bigint as deadline, fields, \
+             participant_mode, participant_cap, submission_reply_message, submission_count \
+             FROM forms WHERE owner = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3",
+            &[
+                (&owner_str, Type::VARCHAR),
+                (&limit, Type::INT8),
+                (&offset, Type::INT8),
+            ],
         )
         .await?;
 
     let mut results = Vec::new();
     for row in rows {
-        let id: i64 = row.get(0);
-        let name: String = row.get(1);
-        let description: String = row.get(2);
-        let created_at: i64 = row.get(3);
-        let deadline: Option<i64> = row.get(4);
+        let id: i64 = row.try_get(0)?;
+        let name: String = row.try_get(1)?;
+        let description: String = row.try_get(2)?;
+        let created_at: i64 = row.try_get(3)?;
+        let deadline: Option<i64> = row.try_get(4)?;
+        let bytes: Vec<u8> = row.try_get(5)?;
+        let p_mode: i16 = row.try_get(6)?;
+        let p_cap: i32 = row.try_get(7)?;
+        let reply_msg: String = row.try_get(8)?;
+        let sub_count: i32 = row.try_get(9)?;
 
-        let mut form = Form::default();
+        let mut form = crate::utils::deserialize_proto::<Form>(&bytes).unwrap_or_default();
         form.id = id as u64;
         form.name = name.into();
         form.description = description.into();
         form.created_at = created_at as u64;
         form.deadline = deadline.unwrap_or(0) as u64;
+        form.participant_mode = crate::pb::forms::ParticipantMode::from(p_mode as i32);
+        form.participant_cap = p_cap as u64;
+        form.submission_reply_message = reply_msg.into();
+        form.submission_count = sub_count as u64;
 
-        let mut out = Vec::new();
-        let mut writer = quick_protobuf::Writer::new(&mut out);
-        form.write_message(&mut writer)?;
-        results.push(out);
+        let final_bytes = crate::utils::serialize_proto(&form)?;
+        results.push(final_bytes.to_vec());
     }
 
     Ok(results)
@@ -352,7 +385,7 @@ pub async fn verify_otp(
     };
 
     if let Some(row) = row {
-        let id: i64 = row.get(0);
+        let id: i64 = row.try_get(0)?;
         client
             .query_typed(
                 "UPDATE otp_codes SET used = true WHERE id = $1",
@@ -420,8 +453,8 @@ pub async fn get_jwt_secret(sd: &SharedData) -> anyhow::Result<Vec<u8>> {
     let row = rows.into_iter().next();
 
     if let Some(row) = row {
-        let key_data: Vec<u8> = row.get(0);
-        let created_at: SystemTime = row.get(1);
+        let key_data: Vec<u8> = row.try_get(0)?;
+        let created_at: SystemTime = row.try_get(1)?;
         let now = SystemTime::now();
 
         // Rotate every 24 hours for security (can be adjusted)
@@ -510,7 +543,10 @@ pub async fn verify_email_jwt(
                     &[],
                 )
                 .await?;
-            let s: Vec<Vec<u8>> = rows.into_iter().map(|row| row.get(0)).collect();
+            let mut s = Vec::new();
+            for r in rows {
+                s.push(r.try_get(0)?);
+            }
             let mut cache = sd.cache.jwt_recent_secrets.write().await;
             *cache = Some(s.clone());
             s
@@ -537,7 +573,7 @@ pub async fn get_form_submissions_count(pool: &Pool, form_id: u64) -> anyhow::Re
     let form_id_i64 = form_id as i64;
     let rows = client
         .query_typed(
-            "SELECT COUNT(id) FROM form_submissions WHERE form_id = $1",
+            "SELECT COUNT(form_id) FROM form_submissions WHERE form_id = $1",
             &[(&form_id_i64, Type::INT8)],
         )
         .await?;
@@ -545,7 +581,7 @@ pub async fn get_form_submissions_count(pool: &Pool, form_id: u64) -> anyhow::Re
         .into_iter()
         .next()
         .context("No row returned from COUNT")?;
-    let count: i64 = row.get(0);
+    let count: i64 = row.try_get(0)?;
     Ok(count as u64)
 }
 
@@ -561,8 +597,8 @@ pub async fn get_user_subscription_tier(pool: &Pool, owner: &str) -> anyhow::Res
         .await?;
     
     if let Some(row) = rows.into_iter().next() {
-        let tier: String = row.get(0);
-        let status_val: i16 = row.get(1);
+        let tier: String = row.try_get(0)?;
+        let status_val: i16 = row.try_get(1)?;
         let status = SubscriptionStatus::from_i16(status_val);
         
         if status == SubscriptionStatus::Active {
@@ -585,6 +621,225 @@ pub async fn get_owner_form_count(pool: &Pool, owner: &str) -> anyhow::Result<u6
         .into_iter()
         .next()
         .context("No row returned from COUNT")?;
-    let count: i64 = row.get(0);
+    let count: i64 = row.try_get(0)?;
     Ok(count as u64)
+}
+
+pub async fn get_owner_total_submissions(pool: &Pool, owner: &str) -> anyhow::Result<u64> {
+    let client = pool.get().await?;
+    let rows = client
+        .query_typed(
+            "SELECT COALESCE(SUM(submission_count), 0)::BIGINT FROM forms WHERE owner = $1",
+            &[(&owner, Type::VARCHAR)],
+        )
+        .await?;
+    let row = rows
+        .into_iter()
+        .next()
+        .context("No row returned from SUM")?;
+    let count: i64 = row.try_get(0)?;
+    Ok(count as u64)
+}
+
+pub async fn add_and_mark_open_participant_accepted(
+    pool: &Pool,
+    form_id: u64,
+    participant: &str,
+    cap: u64,
+) -> anyhow::Result<bool> {
+    let mut client = pool.get().await?;
+    let tx = client.transaction().await?;
+
+    let form_id_i64 = form_id as i64;
+    
+    // First, check if participant already exists and is accepted
+    let rows = tx
+        .query_typed(
+            "SELECT accepted FROM form_allowed_participants WHERE form_id = $1 AND participant = $2 FOR UPDATE",
+            &[(&form_id_i64, Type::INT8), (&participant, Type::VARCHAR)],
+        )
+        .await?;
+    
+    if let Some(row) = rows.into_iter().next() {
+        let accepted: bool = row.try_get(0)?;
+        if accepted {
+            return Ok(false); // Already participated
+        }
+        
+        if cap > 0 {
+            let count_rows = tx
+                .query_typed(
+                    "SELECT COUNT(participant) FROM form_allowed_participants WHERE form_id = $1 AND accepted = true",
+                    &[(&form_id_i64, Type::INT8)],
+                )
+                .await?;
+            let active_count: i64 = match count_rows.first() {
+                Some(r) => r.try_get(0)?,
+                None => 0,
+            };
+            if active_count >= cap as i64 {
+                return Ok(false); // Cap reached
+            }
+        }
+
+        tx.query_typed(
+            "UPDATE form_allowed_participants SET accepted = true WHERE form_id = $1 AND participant = $2",
+            &[(&form_id_i64, Type::INT8), (&participant, Type::VARCHAR)],
+        )
+        .await?;
+        tx.commit().await?;
+        return Ok(true);
+    }
+
+    // Participant does not exist in the table. We check the cap.
+    if cap > 0 {
+        let count_rows = tx
+            .query_typed(
+                "SELECT COUNT(participant) FROM form_allowed_participants WHERE form_id = $1 AND accepted = true",
+                &[(&form_id_i64, Type::INT8)],
+            )
+            .await?;
+        let active_count: i64 = match count_rows.first() {
+            Some(r) => r.try_get(0)?,
+            None => 0,
+        };
+        if active_count >= cap as i64 {
+            return Ok(false); // Cap reached
+        }
+    }
+
+    // Insert as accepted = true immediately
+    tx.query_typed(
+        "INSERT INTO form_allowed_participants (form_id, participant, accepted) VALUES ($1, $2, true)",
+        &[(&form_id_i64, Type::INT8), (&participant, Type::VARCHAR)],
+    )
+    .await?;
+    tx.commit().await?;
+    Ok(true)
+}
+
+pub async fn check_and_log_reply_sent(
+    pool: &Pool,
+    form_id: u64,
+    email: &str,
+) -> anyhow::Result<bool> {
+    let client = pool.get().await?;
+    let form_id_i64 = form_id as i64;
+    let email_str = email.to_string();
+
+    // Try to insert
+    let stmt = "INSERT INTO form_reply_log (form_id, email) VALUES ($1, $2) ON CONFLICT DO NOTHING RETURNING 1";
+    let rows = client
+        .query_typed(stmt, &[(&form_id_i64, Type::INT8), (&email_str, Type::VARCHAR)])
+        .await?;
+    
+    Ok(!rows.is_empty())
+}
+
+pub async fn get_form_submitter_emails(pool: &Pool, form_id: u64) -> anyhow::Result<Vec<String>> {
+    let client = pool.get().await?;
+    let form_id_i64 = form_id as i64;
+    let rows = client
+        .query_typed(
+            "SELECT participant FROM form_allowed_participants WHERE form_id = $1 AND accepted = TRUE",
+            &[(&form_id_i64, Type::INT8)],
+        )
+        .await?;
+    let mut emails = Vec::new();
+    for r in rows {
+        let p: String = r.try_get(0)?;
+        if p.contains('@') {
+            emails.push(p);
+        }
+    }
+    Ok(emails)
+}
+
+pub async fn process_reply_queue(sd: &Arc<crate::SharedData>) -> anyhow::Result<()> {
+    let client = sd.db.get().await?;
+
+    // 1. Fetch all pending reply log entries using typed method
+    let rows = client
+        .query_typed(
+            "SELECT form_id, email FROM form_reply_log WHERE sent_at IS NULL",
+            &[],
+        )
+        .await?;
+
+    if rows.is_empty() {
+        return Ok(());
+    }
+
+    log::info!("Found {} pending reply emails to process.", rows.len());
+
+    // 2. Loop through and process them
+    for row in rows {
+        let form_id_i64: i64 = row.try_get(0)?;
+        let email: String = row.try_get(1)?;
+        let form_id = form_id_i64 as u64;
+
+        // Fetch form details
+        let form_bytes = match get_form_bytes(&sd.db, form_id).await {
+            Ok(b) => b,
+            Err(e) => {
+                log::error!("Failed to fetch form bytes for form_id={} in queue: {:?}", form_id, e);
+                continue;
+            }
+        };
+
+        let form = match crate::utils::deserialize_proto::<Form>(&form_bytes) {
+            Ok(f) => f,
+            Err(e) => {
+                log::error!("Failed to deserialize form_id={} in queue: {:?}", form_id, e);
+                continue;
+            }
+        };
+
+        // If the form doesn't have a reply message configured, mark it as sent/skipped
+        if form.submission_reply_message.is_empty() {
+            let _ = client
+                .execute_typed(
+                    "UPDATE form_reply_log SET sent_at = NOW() WHERE form_id = $1 AND email = $2",
+                    &[(&form_id_i64, Type::INT8), (&email, Type::VARCHAR)],
+                )
+                .await;
+            continue;
+        }
+
+        // Send email using emailer
+        if let Some(emailer) = &sd.emailer {
+            match emailer
+                .send_submission_reply(&email, &form.name, &form.submission_reply_message)
+                .await
+            {
+                Ok(_) => {
+                    log::info!("Successfully sent reply receipt to {} for form '{}'", email, form.name);
+                    let _ = client
+                        .execute_typed(
+                            "UPDATE form_reply_log SET sent_at = NOW() WHERE form_id = $1 AND email = $2",
+                            &[(&form_id_i64, Type::INT8), (&email, Type::VARCHAR)],
+                        )
+                        .await;
+                }
+                Err(e) => {
+                    log::error!("Failed to send reply to {} for form_id={}: {:?}", email, form_id, e);
+                }
+            }
+        } else if sd.config.skip_email_sending {
+            // In development, print to console and mark as sent
+            println!("--- EMAIL REPLY QUEUE BATCH ---");
+            println!("To: {}", email);
+            println!("Subject: Thanks for participating in {}", form.name);
+            println!("Body: {}", form.submission_reply_message);
+            println!("-------------------");
+            let _ = client
+                .execute_typed(
+                    "UPDATE form_reply_log SET sent_at = NOW() WHERE form_id = $1 AND email = $2",
+                    &[(&form_id_i64, Type::INT8), (&email, Type::VARCHAR)],
+                )
+                .await;
+        }
+    }
+
+    Ok(())
 }

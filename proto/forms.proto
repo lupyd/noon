@@ -25,6 +25,12 @@ message Options {
     bool use_bitmask = 2; // Indicates if selections should be represented as a bitmask
 }
 
+enum ParticipantMode {
+    LIST_OF_EMAILS = 0;
+    ANY_WITH_EMAIL = 1;
+    NO_EMAIL_REQUIRED = 2;
+}
+
 message Form {
     uint64 id = 1;
     string name = 2;
@@ -35,6 +41,11 @@ message Form {
     repeated Field fields = 8;
     repeated string allowed_participants = 10;
     uint64 deadline = 13;
+    ParticipantMode participant_mode = 14;
+    uint64 participant_cap = 15;
+    string submission_reply_message = 16;
+    uint64 submission_count = 17;
+
   
     message Field {
         string id = 11;
@@ -98,8 +109,11 @@ message FormResults {
     repeated FormSubmission submissions = 1;
     Form form = 2;
     uint64 total_submissions = 3;
+    repeated string submitter_emails = 4;
 }
 
 message UserForms {
     repeated Form forms = 1;
+    uint64 total_forms = 2;
+    uint64 total_submissions = 3;
 }

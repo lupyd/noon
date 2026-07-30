@@ -79,11 +79,11 @@ pub async fn get_subscription_info(pool: &Pool, owner: &str) -> anyhow::Result<S
     if let Some(row) = rows.into_iter().next() {
         Ok(SubscriptionInfo {
             owner: owner.to_string(),
-            tier: row.get(0),
-            razorpay_subscription_id: row.get(1),
-            razorpay_plan_id: row.get(2),
-            subscription_status: SubscriptionStatus::from_i16(row.get(3)),
-            current_period_end: row.get(4),
+            tier: row.try_get(0)?,
+            razorpay_subscription_id: row.try_get(1)?,
+            razorpay_plan_id: row.try_get(2)?,
+            subscription_status: SubscriptionStatus::from_i16(row.try_get(3)?),
+            current_period_end: row.try_get(4)?,
         })
     } else {
         Ok(SubscriptionInfo {

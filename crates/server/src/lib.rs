@@ -25,6 +25,11 @@ pub async fn start_http_server(port: u16) -> Result<(), anyhow::Error> {
 
     let sd = Arc::new(SharedData::new());
 
+    let sd_worker = sd.clone();
+    tokio::spawn(async move {
+        start_reply_queue_worker(sd_worker).await;
+    });
+
     while let Ok((stream, addr)) = listener.accept().await {
         let sd = sd.clone();
 
@@ -72,6 +77,15 @@ pub fn build_response(status: StatusCode, body: impl Into<Bytes>) -> Resp {
 #[inline(always)]
 pub fn ok_response(body: impl Into<Bytes>) -> Resp {
     build_response(StatusCode::OK, body)
+}
+
+#[inline(always)]
+pub fn proto_response(body: impl Into<Bytes>, proto_name: &str) -> Resp {
+    response_builder()
+        .status(StatusCode::OK)
+        .header(header::CONTENT_TYPE, format!("application/x-protobuf; proto={}", proto_name))
+        .body(full_body(body))
+        .unwrap()
 }
 
 #[inline(always)]
@@ -180,6 +194,24 @@ pub async fn service(
         _ => {
             let response = not_found_response();
             Ok(response)
+        }
+    }
+}
+
+pub async fn start_reply_queue_worker(sd: Arc<SharedData>) {
+    log::info!("Background reply queue worker started.");
+    loop {
+        let interval_secs = if *crate::utils::EMULATOR_MODE {
+            5
+        } else {
+            6 * 60 * 60 // 6 hours
+        };
+
+        tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+
+        log::debug!("Running scheduled reply queue processing batch...");
+        if let Err(e) = forms_db::process_reply_queue(&sd).await {
+            log::error!("Error in scheduled reply queue processing: {:?}", e);
         }
     }
 }
