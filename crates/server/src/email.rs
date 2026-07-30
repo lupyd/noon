@@ -159,6 +159,57 @@ impl Emailer {
         Ok(())
     }
 
+    pub async fn send_submission_reply(
+        &self,
+        to_email: &str,
+        form_name: &str,
+        custom_message: &str,
+    ) -> Result<()> {
+        let to_address: Mailbox = to_email.parse()?;
+
+        let text_body = format!(
+            "Thanks for participating in '{}'.\n\nHere is a message from the creator:\n\n{}\n\nThank you!",
+            form_name, custom_message
+        );
+
+        let html_content = format!(
+            r#"<h1>Thanks for participating</h1>
+            <p>Thank you for participating in <strong>{}</strong>.</p>
+            <div style="margin: 24px 0; border: 1px solid #e2e8f0; border-radius: 8px; overflow: hidden; background-color: #ffffff; text-align: left;">
+                <div style="background-color: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 12px 16px;">
+                    <span style="font-size: 11px; font-weight: 800; text-transform: uppercase; color: #64748b; letter-spacing: 0.05em; display: block; margin: 0;">Message from the form author:</span>
+                </div>
+                <div style="padding: 16px; color: #334155; font-size: 15px; line-height: 1.6; word-break: break-word; text-align: left;">
+                    {}
+                </div>
+            </div>
+            <p style="font-size: 13px; color: #64748b; margin-top: 24px; text-align: left;">
+                Note: This receipt message was configured by the form creator and delivered securely via Noon. Responses remain completely anonymous.
+            </p>"#,
+            form_name, custom_message
+        );
+
+        let html_body = self.wrap_html(&html_content);
+
+        let email = Message::builder()
+            .from(self.from_address.clone())
+            .to(to_address)
+            .subject(format!("Thanks for participating in {}", form_name))
+            .multipart(
+                MultiPart::alternative()
+                    .singlepart(SinglePart::plain(text_body))
+                    .singlepart(SinglePart::html(html_body)),
+            )?;
+
+        self.sender
+            .send(email)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to queue reply email: {}", e))?;
+        log::info!("Reply email queued for {}", to_email);
+        Ok(())
+    }
+
+
     fn wrap_html(&self, content: &str) -> String {
         format!(
             r#"<!DOCTYPE html>

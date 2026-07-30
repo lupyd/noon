@@ -76,6 +76,12 @@ export const FormBuilder: React.FC = () => {
   const [showEmailVerifyInput, setShowEmailVerifyInput] = useState(false);
   const [emailVerifyError, setEmailVerifyError] = useState<string | null>(null);
 
+  // New participant settings state variables
+  const [participantMode, setParticipantMode] = useState<number>(0); // 0 = LIST_OF_EMAILS, 1 = ANY_WITH_EMAIL, 2 = NO_EMAIL_REQUIRED
+  const [participantCap, setParticipantCap] = useState<number | ''>('');
+  const [submissionReplyMessage, setSubmissionReplyMessage] = useState('');
+  const [userTier, setUserTier] = useState('free');
+
   React.useEffect(() => {
     const fetchLimit = async () => {
       if (isAuthenticated) {
@@ -87,6 +93,11 @@ export const FormBuilder: React.FC = () => {
             if (data.max_participants) {
               setMaxParticipants(data.max_participants);
             }
+            if (data.tier && data.subscription_status === 'active') {
+              setUserTier(data.tier);
+            } else {
+              setUserTier('free');
+            }
           }
         } catch (e) {
           console.error("Failed to fetch limit", e);
@@ -95,6 +106,15 @@ export const FormBuilder: React.FC = () => {
     };
     fetchLimit();
   }, [isAuthenticated, getAuthHeaders]);
+
+  React.useEffect(() => {
+    const templateData = location.state?.template;
+    if (templateData) {
+      setName(templateData.name);
+      setDescription(templateData.description);
+      setFields(templateData.fields);
+    }
+  }, [location.state]);
 
   const addField = () => {
     const fieldId = `field_${Math.random().toString(36).substr(2, 9)}`;
@@ -147,23 +167,35 @@ export const FormBuilder: React.FC = () => {
       .map((e: string) => e.trim())
       .filter((e: string) => e.length > 0);
 
-    if (mentionedEmailsArray.length === 0) {
-      setError('At least one authorized participant email is required.');
-      setIsSubmitting(false);
-      return;
-    }
+    const finalCap = participantMode === 0
+      ? mentionedEmailsArray.length
+      : (participantCap === '' || participantCap === 0 ? maxParticipants : participantCap);
 
-    const invalidEmails = validateEmails(mentionedEmailsArray);
-    if (invalidEmails.length > 0) {
-      setError(`Invalid email${invalidEmails.length > 1 ? 's' : ''}: ${invalidEmails.join(', ')}`);
-      setIsSubmitting(false);
-      return;
-    }
+    if (participantMode === 0) {
+      if (mentionedEmailsArray.length === 0) {
+        setError('At least one authorized participant email is required.');
+        setIsSubmitting(false);
+        return;
+      }
 
-    if (mentionedEmailsArray.length > maxParticipants) {
-      setError(`Maximum ${maxParticipants} participants allowed. You have ${mentionedEmailsArray.length}. Contact contact@lupyd.com to increase your limit.`);
-      setIsSubmitting(false);
-      return;
+      const invalidEmails = validateEmails(mentionedEmailsArray);
+      if (invalidEmails.length > 0) {
+        setError(`Invalid email${invalidEmails.length > 1 ? 's' : ''}: ${invalidEmails.join(', ')}`);
+        setIsSubmitting(false);
+        return;
+      }
+
+      if (mentionedEmailsArray.length > maxParticipants) {
+        setError(`Maximum ${maxParticipants} participants allowed. You have ${mentionedEmailsArray.length}. Upgrade your subscription to increase this limit.`);
+        setIsSubmitting(false);
+        return;
+      }
+    } else {
+      if (finalCap > maxParticipants) {
+        setError(`Maximum participant cap allowed for your plan is ${maxParticipants}. Upgrade your subscription to increase this limit.`);
+        setIsSubmitting(false);
+        return;
+      }
     }
 
     const fieldIds = fields.map(f => f.id);
@@ -206,8 +238,12 @@ export const FormBuilder: React.FC = () => {
       owner: verifiedEmail || '',
       createdAt: Math.floor(Date.now() / 1000),
       updatedAt: Math.floor(Date.now() / 1000),
-      allowedParticipants: mentionedEmailsArray,
+      allowedParticipants: participantMode === 0 ? mentionedEmailsArray : [],
       deadline: deadline ? Math.floor(new Date(deadline).getTime() / 1000) : 0,
+      participantMode,
+      participantCap: finalCap,
+      submissionReplyMessage: userTier !== 'free' ? submissionReplyMessage : '',
+      submissionCount: 0,
     };
 
     try {
@@ -284,7 +320,7 @@ export const FormBuilder: React.FC = () => {
     return <div className="loading card animate-fade-in" style={{ textAlign: 'center' }}>Loading authentication status...</div>;
   }
 
-  if (!isAuthenticated && !verifiedEmail) {
+  if (!isAuthenticated) {
     return (
       <div className="auth-required card animate-fade-in" style={{ textAlign: 'center', padding: '6rem 2rem' }}>
         <div className="noon-logo noon-logo-hero" style={{ fontSize: '4rem', marginBottom: '2rem' }}>
@@ -406,28 +442,108 @@ export const FormBuilder: React.FC = () => {
         </div>
 
         <div className="card special-card" style={{ padding: '2.5rem', marginTop: '1.5rem' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
-            <h3 style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginTop: 0, fontSize: '1.25rem' }}>
-              <Mail size={18} /> Participant Whitelist
-            </h3>
-            <span className="badge" style={{
-              background: (mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length > maxParticipants)
-                ? 'rgba(239, 68, 68, 0.15)' : undefined,
-              color: (mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length > maxParticipants)
-                ? 'var(--error)' : undefined,
-            }}>
-              {mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length} / {maxParticipants}
-            </span>
-          </div>
-          <p className="help-text" style={{ marginBottom: '1.5rem' }}>Only these emails will be allowed to fill the form. <strong>Invitation emails with direct access links will be sent automatically.</strong></p>
+          <h3 style={{ marginTop: 0, fontSize: '1.25rem', marginBottom: '1.5rem' }}>
+            Participant & Reply Settings
+          </h3>
+
           <div className="form-group" style={{ marginBottom: '1.5rem' }}>
-            <input
-              type="text"
-              value={mentionedEmails}
-              onChange={(e) => setMentionedEmails(e.target.value)}
-              placeholder="team@company.com, user@example.com"
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Who can fill this form?</label>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.95rem' }}>
+                <input
+                  type="radio"
+                  name="participantMode"
+                  checked={participantMode === 0}
+                  onChange={() => setParticipantMode(0)}
+                  style={{ width: 'auto', margin: 0 }}
+                />
+                <span>Only allow a list of emails (explicit whitelist)</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.95rem' }}>
+                <input
+                  type="radio"
+                  name="participantMode"
+                  checked={participantMode === 1}
+                  onChange={() => setParticipantMode(1)}
+                  style={{ width: 'auto', margin: 0 }}
+                />
+                <span>Allow any participant, but with email OTP verification</span>
+              </label>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', fontSize: '0.95rem' }}>
+                <input
+                  type="radio"
+                  name="participantMode"
+                  checked={participantMode === 2}
+                  onChange={() => setParticipantMode(2)}
+                  style={{ width: 'auto', margin: 0 }}
+                />
+                <span>No email verification required (anonymous open submission)</span>
+              </label>
+            </div>
+          </div>
+
+          {participantMode === 0 && (
+            <div className="animate-fade-in" style={{ padding: '1rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <label style={{ fontSize: '0.875rem', fontWeight: 600, margin: 0 }}>Participant Email Whitelist</label>
+                <span className="badge" style={{
+                  background: (mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length > maxParticipants)
+                    ? 'rgba(239, 68, 68, 0.15)' : undefined,
+                  color: (mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length > maxParticipants)
+                    ? 'var(--error)' : undefined,
+                }}>
+                  {mentionedEmails.split(',').map(e => e.trim()).filter(e => e.length > 0).length} / {maxParticipants}
+                </span>
+              </div>
+              <input
+                type="text"
+                value={mentionedEmails}
+                onChange={(e) => setMentionedEmails(e.target.value)}
+                placeholder="team@company.com, user@example.com"
+                style={{ width: '100%', marginBottom: '0.5rem' }}
+              />
+              <p className="help-text">Comma-separated list of authorized respondent emails. Invitation links will be sent automatically.</p>
+            </div>
+          )}
+
+          {(participantMode === 1 || participantMode === 2) && (
+            <div className="animate-fade-in" style={{ padding: '1rem', background: 'rgba(255, 255, 255, 0.03)', borderRadius: '6px', marginBottom: '1.5rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                <label style={{ fontSize: '0.875rem', fontWeight: 600, margin: 0 }}>Participant Cap (Max Submissions)</label>
+                <span className="badge">Max: {maxParticipants}</span>
+              </div>
+              <input
+                type="number"
+                value={participantCap}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setParticipantCap(val === '' ? '' : Math.max(1, parseInt(val)));
+                }}
+                placeholder={`e.g. ${maxParticipants}`}
+                style={{ width: '100%', marginBottom: '0.5rem' }}
+              />
+              <p className="help-text">Maximum number of submissions allowed for this form. Defaults to your plan limit ({maxParticipants}).</p>
+            </div>
+          )}
+
+          <div className="form-group" style={{ marginBottom: '1.5rem' }}>
+            <label style={{ fontSize: '0.875rem', fontWeight: 600, display: 'block', marginBottom: '0.5rem' }}>Custom Reply Email Message (Optional)</label>
+            <textarea
+              value={submissionReplyMessage}
+              onChange={(e) => setSubmissionReplyMessage(e.target.value.slice(0, 250))}
+              placeholder={userTier === 'free' ? "🔒 Upgrade to Pro or Team plan to customize the email receipt message sent to respondents." : "Write a custom message sent to respondents after submission (max 250 chars)..."}
+              rows={3}
+              disabled={userTier === 'free'}
+              style={{ width: '100%', marginBottom: '0.5rem', opacity: userTier === 'free' ? 0.6 : 1 }}
             />
-            <p className="help-text">Comma-separated list of authorized respondents (max {maxParticipants}). Need more? Contact <a href="mailto:contact@lupyd.com" style={{ color: 'var(--primary)' }}>contact@lupyd.com</a>.</p>
+            {userTier !== 'free' && (
+              <p className="help-text" style={{ textAlign: 'right', fontSize: '0.75rem', color: submissionReplyMessage.length >= 250 ? 'var(--error)' : undefined }}>
+                {submissionReplyMessage.length} / 250 characters
+              </p>
+            )}
+            {userTier === 'free' && (
+              <p className="help-text" style={{ fontSize: '0.75rem' }}>Gated to Pro/Team plans.</p>
+            )}
           </div>
 
           <div className="form-group" style={{ marginBottom: 0 }}>

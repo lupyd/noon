@@ -35,6 +35,17 @@ export const FormSubmission: React.FC = () => {
   // Per-form tokens stored in localStorage
   const [token, setToken] = useState<string | null>(localStorage.getItem(`noon_token_${id}`));
 
+  const getOrCreateGuestToken = () => {
+    let g = localStorage.getItem(`noon_guest_token_${id}`);
+    if (!g) {
+      g = typeof window.crypto.randomUUID === 'function'
+        ? window.crypto.randomUUID()
+        : Math.random().toString(36).substring(2, 15) + Math.random().toString(36).substring(2, 15);
+      localStorage.setItem(`noon_guest_token_${id}`, g);
+    }
+    return g;
+  };
+
   const fetchForm = async () => {
     setLoading(true);
     setError(null);
@@ -47,6 +58,8 @@ export const FormSubmission: React.FC = () => {
         const globalHeaders = await getAuthHeaders();
         if (globalHeaders['Authorization']) {
           headers['Authorization'] = globalHeaders['Authorization'];
+        } else {
+          headers['Authorization'] = `Guest ${getOrCreateGuestToken()}`;
         }
       }
 
@@ -217,7 +230,7 @@ export const FormSubmission: React.FC = () => {
       const signRes = await fetch(`${API_URL}/forms/${id}/blind_sign`, {
         method: 'POST',
         headers: {
-          'Authorization': token ? `EmailOnly ${token}` : (await getAuthHeaders())['Authorization'] || '',
+          'Authorization': token ? `EmailOnly ${token}` : (await getAuthHeaders())['Authorization'] || `Guest ${getOrCreateGuestToken()}`,
           'Content-Type': 'application/octet-stream',
         },
         // @ts-ignore
@@ -248,6 +261,32 @@ export const FormSubmission: React.FC = () => {
 
       if (!submitRes.ok) throw new Error(await submitRes.text() || "Failed to submit form");
 
+      // Extract email from token or state and trigger reply if message is configured
+      const getEmailFromToken = (tok: string | null) => {
+        if (!tok) return null;
+        try {
+          const payloadPart = tok.split('.')[1];
+          if (!payloadPart) return null;
+          const decoded = JSON.parse(atob(payloadPart));
+          return decoded.sub || null;
+        } catch (e) {
+          return null;
+        }
+      };
+
+      const emailToUse = userEmail || getEmailFromToken(token);
+      if (form?.submissionReplyMessage && emailToUse) {
+        try {
+          await fetch(`${API_URL}/forms/${id}/send_reply`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: emailToUse }),
+          });
+        } catch (e) {
+          console.error("Failed to trigger reply email:", e);
+        }
+      }
+
       setIsSubmitted(true);
     } catch (err) {
       setError((err as Error).message);
@@ -271,6 +310,14 @@ export const FormSubmission: React.FC = () => {
       </div>
       <h2 style={{ fontSize: '2.5rem', marginBottom: '1rem' }}>Data Transmitted</h2>
       <p className="text-muted" style={{ fontSize: '1.125rem' }}>Your response has been sealed and recorded securely.</p>
+      
+      {form?.submissionReplyMessage && (
+        <div style={{ maxWidth: '500px', margin: '2.5rem auto 0', padding: '1.5rem', background: 'rgba(255, 255, 255, 0.02)', borderLeft: '4px solid var(--accent)', borderRadius: '4px', textAlign: 'left' }}>
+          <p style={{ margin: 0, fontSize: '0.95rem', fontWeight: 600, marginBottom: '0.5rem', color: 'var(--text)' }}>Message from the author:</p>
+          <p style={{ margin: 0, fontSize: '0.95rem', color: 'var(--text-muted)', fontStyle: 'italic', lineHeight: 1.5 }}>"{form.submissionReplyMessage}"</p>
+        </div>
+      )}
+
       <button onClick={() => window.location.href = '/'} className="primary-button large" style={{ marginTop: '3.5rem' }}>
         Return home
       </button>

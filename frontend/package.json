@@ -13,10 +13,12 @@
     "proto:generate": "mkdir -p src/generated && protoc --plugin=./node_modules/.bin/protoc-gen-ts_proto --ts_proto_out=src/generated --ts_proto_opt=esModuleInterop=true -I ../proto ../proto/forms.proto"
   },
   "dependencies": {
+    "chart.js": "^4.5.1",
     "lucide-react": "^1.7.0",
     "preact": "^10.29.1",
     "protobufjs": "^8.0.0",
     "react": "^19.2.0",
+    "react-chartjs-2": "^5.3.1",
     "react-dom": "^19.2.0",
     "react-router-dom": "^7.14.1"
   },

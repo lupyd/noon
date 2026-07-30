@@ -277,6 +277,9 @@ export const Subscription: React.FC = () => {
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> {config ? config.pro_max_participants : 100} Participants/Form
                         </li>
                         <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
+                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> Custom Reply Email Receipts
+                        </li>
+                        <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> Analytics Dashboard
                         </li>
                     </ul>
@@ -318,6 +321,12 @@ export const Subscription: React.FC = () => {
                         </li>
                         <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> {config ? config.team_max_participants : 1000} Participants/Form
+                        </li>
+                        <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
+                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> Custom Reply Email Receipts
+                        </li>
+                        <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
+                            <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> Reveal Verified Respondent Emails
                         </li>
                         <li style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center' }}>
                             <CheckCircle size={16} style={{ marginRight: '8px', color: '#22c55e' }} /> Priority Support

@@ -12,6 +12,7 @@ const FormSubmission = lazy(() => import('./components/FormSubmission').then(m =
 const FormResults = lazy(() => import('./components/FormResults').then(m => ({ default: m.FormResults })));
 const Dashboard = lazy(() => import('./components/Dashboard').then(m => ({ default: m.Dashboard })));
 const Subscription = lazy(() => import('./components/Subscription').then(m => ({ default: m.Subscription })));
+const Templates = lazy(() => import('./components/Templates').then(m => ({ default: m.Templates })));
 
 const PageLoader = () => (
   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '40vh' }}>
@@ -218,6 +219,7 @@ function NavBarContent() {
   return (
     <nav className="navbar-nav">
       <Link to="/about">About</Link>
+      <Link to="/templates">Templates</Link>
       <Link to="/dashboard">Dashboard</Link>
       <Link to="/subscription">Pricing</Link>
       <a href="https://github.com/lupyd/noon.git" target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center' }} title="View on GitHub">
@@ -277,6 +279,7 @@ function App() {
                   <Route path="/forms/:id" element={<FormSubmission />} />
                   <Route path="/forms/:id/results" element={<FormResults />} />
                   <Route path="/subscription" element={<Subscription />} />
+                  <Route path="/templates" element={<Templates />} />
                 </Routes>
               </Suspense>
             </main>

@@ -2,17 +2,16 @@ use base64::Engine;
 use bytes::Bytes;
 use http_body_util::Full;
 use hyper::{Method, Request, Response, StatusCode, body::Incoming, header};
-use quick_protobuf::MessageRead;
 use std::sync::Arc;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::task::JoinSet;
 
 use crate::forms_db;
-use crate::pb::forms::{BlindSubmission, Form, FormSubmission, OtpRequest, OtpVerify};
+use crate::pb::forms::{BlindSubmission, Form, FormSubmission, FormResults, OtpRequest, OtpVerify, UserForms};
 use crate::shared_data::SharedData;
 use crate::{
     bad_request_response, build_response, internal_error_response, limit_and_collect,
-    not_found_response, ok_response, unauthorized_response,
+    not_found_response, ok_response, proto_response, unauthorized_response,
 };
 use rsa::traits::PublicKeyParts;
 
@@ -60,6 +59,7 @@ pub async fn handle_request(
                 (Method::POST, "submit") => return submit_blind_route(req, sd, form_id).await,
                 (Method::POST, "blind_sign") => return blind_sign_route(req, sd, form_id).await,
                 (Method::GET, "results") => return get_results_route(req, sd, form_id).await,
+                (Method::POST, "send_reply") => return send_reply_route(req, sd, form_id).await,
                 _ => return Ok(not_found_response()),
             }
         }
@@ -103,6 +103,12 @@ async fn get_authorized_participant(
         }
     }
 
+    if let Some(guest_id) = auth_str.strip_prefix("Guest ") {
+        if guest_id.chars().all(|c| c.is_alphanumeric() || c == '-') {
+            return Some(format!("guest:{}", guest_id));
+        }
+    }
+
     None
 }
 
@@ -117,8 +123,7 @@ async fn create_form_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
-    let form = match Form::from_reader(&mut reader, &body_bytes) {
+    let mut form = match crate::utils::deserialize_proto::<Form>(&body_bytes) {
         Ok(f) => f,
         Err(_) => return Ok(bad_request_response()),
     };
@@ -128,13 +133,13 @@ async fn create_form_route(
         None => return Ok(unauthorized_response()),
     };
 
-    // Only user:* can create forms? Or email:* too?
-    // Let's allow both for now.
+    let is_open_submission = form.participant_mode == crate::pb::forms::ParticipantMode::ANY_WITH_EMAIL
+        || form.participant_mode == crate::pb::forms::ParticipantMode::NO_EMAIL_REQUIRED;
 
-    if form.allowed_participants.is_empty() {
+    if form.allowed_participants.is_empty() && !is_open_submission {
         return Ok(build_response(
             StatusCode::BAD_REQUEST,
-            "allowed_participants cannot be empty (anonymous forms require participants list)",
+            "allowed_participants cannot be empty (enable open submission or add participants)",
         ));
     }
 
@@ -164,16 +169,46 @@ async fn create_form_route(
         ));
     }
 
-    let total_participants = form.allowed_participants.len();
     let max_participants = sd.config.limits.max_participants_for(&tier);
-    if total_participants > max_participants {
-        return Ok(build_response(
-            StatusCode::BAD_REQUEST,
-            format!(
-                "Your {} plan allows a maximum of {} participants per form. You have {}. Please upgrade your subscription at lupyd.com to increase this limit.",
-                tier, max_participants, total_participants
-            ),
-        ));
+    let mut participant_cap = form.participant_cap;
+
+    if is_open_submission {
+        if participant_cap == 0 || participant_cap > max_participants as u64 {
+            participant_cap = max_participants as u64;
+        }
+    } else {
+        let total_participants = form.allowed_participants.len();
+        if total_participants > max_participants {
+            return Ok(build_response(
+                StatusCode::BAD_REQUEST,
+                format!(
+                    "Your {} plan allows a maximum of {} participants per form. You have {}. Please upgrade your subscription at lupyd.com to increase this limit.",
+                    tier, max_participants, total_participants
+                ),
+            ));
+        }
+        participant_cap = total_participants as u64;
+    }
+
+    // Save the participant cap back into the form
+    form.participant_cap = participant_cap;
+
+    // Validate submission reply message if present
+    if !form.submission_reply_message.is_empty() {
+        if form.submission_reply_message.len() > 250 {
+            return Ok(build_response(
+                StatusCode::BAD_REQUEST,
+                "Reply message exceeds 250 characters limit",
+            ));
+        }
+        if tier != "pro" && tier != "team" {
+            return Ok(build_response(
+                StatusCode::BAD_REQUEST,
+                "Custom reply messages require a Team or Pro plan",
+            ));
+        }
+        let sanitized = crate::utils::sanitize_reply_message(&form.submission_reply_message);
+        form.submission_reply_message = std::borrow::Cow::Owned(sanitized);
     }
 
     // Validate email format for mentioned_emails
@@ -228,56 +263,58 @@ async fn create_form_route(
             let owner_display_str = owner_display.to_string();
             let form_name_str = form.name.to_string();
 
-            for participant in &form.allowed_participants {
-                let p = participant.to_string();
-                if !p.contains("@") {
-                    continue;
-                }
+             if !is_open_submission {
+                 for participant in &form.allowed_participants {
+                     let p = participant.to_string();
+                     if !p.contains("@") {
+                         continue;
+                     }
 
-                let sd = sd.clone();
-                let form_name = form_name_str.clone();
-                let owner_display = owner_display_str.clone();
-                let frontend_url = frontend_url.clone();
-                let form_id = id;
+                     let sd = sd.clone();
+                     let form_name = form_name_str.clone();
+                     let owner_display = owner_display_str.clone();
+                     let frontend_url = frontend_url.clone();
+                     let form_id = id;
 
-                join_set.spawn(async move {
-                    if let Ok(token) = forms_db::generate_email_jwt(
-                        &sd,
-                        &p,
-                        Some(form_id),
-                        sd.config.auth_iss.clone(),
-                        sd.config.auth_aud.clone(),
-                    )
-                    .await
-                    {
-                        let form_link =
-                            format!("{}/forms/{}?token={}", frontend_url, form_id, token);
-                        if let Some(emailer) = &sd.emailer {
-                            match emailer
-                                .send_form_invitation(&p, &form_name, &owner_display, &form_link)
-                                .await
-                            {
-                                Ok(_) => {}
-                                Err(e) => {
-                                    log::error!("Failed to send invitation email to {}: {}", p, e)
-                                }
-                            }
-                        } else if sd.config.skip_email_sending {
-                            println!("--- EMAIL INVITATION ---");
-                            println!("To: {}", p);
-                            println!("Subject: Invitation to fill {}", form_name);
-                            println!(
-                                "Body: {} has invited you to fill out the form: {}
+                     join_set.spawn(async move {
+                         if let Ok(token) = forms_db::generate_email_jwt(
+                             &sd,
+                             &p,
+                             Some(form_id),
+                             sd.config.auth_iss.clone(),
+                             sd.config.auth_aud.clone(),
+                         )
+                         .await
+                         {
+                             let form_link =
+                                 format!("{}/forms/{}?token={}", frontend_url, form_id, token);
+                             if let Some(emailer) = &sd.emailer {
+                                 match emailer
+                                     .send_form_invitation(&p, &form_name, &owner_display, &form_link)
+                                     .await
+                                 {
+                                     Ok(_) => {}
+                                     Err(e) => {
+                                         log::error!("Failed to send invitation email to {}: {}", p, e)
+                                     }
+                                 }
+                             } else if sd.config.skip_email_sending {
+                                 println!("--- EMAIL INVITATION ---");
+                                 println!("To: {}", p);
+                                 println!("Subject: Invitation to fill {}", form_name);
+                                 println!(
+                                     "Body: {} has invited you to fill out the form: {}
 Direct Link: {}",
-                                owner_display, form_name, form_link
-                            );
-                            println!("------------------------");
-                        }
-                    }
-                });
-            }
+                                     owner_display, form_name, form_link
+                                 );
+                                 println!("------------------------");
+                             }
+                         }
+                     });
+                 }
 
-            while join_set.join_next().await.is_some() {}
+                 while join_set.join_next().await.is_some() {}
+             }
 
             Ok(build_response(
                 StatusCode::OK,
@@ -297,30 +334,10 @@ async fn get_form_route(
     form_id: u64,
 ) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
     let headers = req.headers();
-    let participant = match get_authorized_participant(headers, &sd, Some(form_id)).await {
-        Some(p) => p,
-        None => return Ok(unauthorized_response()),
-    };
-
-    // Check if participant is allowed
-    match forms_db::is_participant_allowed(&sd.db, form_id, &participant).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return Ok(build_response(
-                StatusCode::FORBIDDEN,
-                "You are not allowed to access this form",
-            ));
-        }
-        Err(e) => {
-            log::error!("is_participant_allowed error: {:?}", e);
-            return Ok(internal_error_response());
-        }
-    }
 
     match forms_db::get_form_bytes(&sd.db, form_id).await {
         Ok(bytes) => {
-            let mut reader = quick_protobuf::BytesReader::from_bytes(&bytes);
-            let parsed_form = Form::from_reader(&mut reader, &bytes).unwrap_or_default();
+            let parsed_form = crate::utils::deserialize_proto::<Form>(&bytes).unwrap_or_default();
 
             if parsed_form.deadline > 0 {
                 let now = SystemTime::now()
@@ -334,7 +351,46 @@ async fn get_form_route(
                     ));
                 }
             }
-            Ok(ok_response(bytes))
+
+            // Verify authorization based on participant mode
+            match parsed_form.participant_mode {
+                crate::pb::forms::ParticipantMode::NO_EMAIL_REQUIRED => {
+                    // Open to everyone, no authentication check needed to view the form structure
+                }
+                crate::pb::forms::ParticipantMode::ANY_WITH_EMAIL => {
+                    let participant = match get_authorized_participant(headers, &sd, Some(form_id)).await {
+                        Some(p) => p,
+                        None => return Ok(unauthorized_response()),
+                    };
+                    if !participant.starts_with("email:") {
+                        return Ok(build_response(
+                            StatusCode::FORBIDDEN,
+                            "Email verification required",
+                        ));
+                    }
+                }
+                crate::pb::forms::ParticipantMode::LIST_OF_EMAILS => {
+                    let participant = match get_authorized_participant(headers, &sd, Some(form_id)).await {
+                        Some(p) => p,
+                        None => return Ok(unauthorized_response()),
+                    };
+                    match forms_db::is_participant_allowed(&sd.db, form_id, &participant).await {
+                        Ok(true) => {}
+                        Ok(false) => {
+                            return Ok(build_response(
+                                StatusCode::FORBIDDEN,
+                                "You are not allowed to access this form",
+                            ));
+                        }
+                        Err(e) => {
+                            log::error!("is_participant_allowed error: {:?}", e);
+                            return Ok(internal_error_response());
+                        }
+                    }
+                }
+            }
+
+            Ok(proto_response(bytes, "Form"))
         }
         Err(e) => {
             log::error!("get_form error: {:?}", e);
@@ -379,8 +435,7 @@ async fn blind_sign_route(
         Ok(b) => b,
         Err(_) => return Ok(not_found_response()),
     };
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&form_bytes);
-    let parsed_form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
+    let parsed_form = crate::utils::deserialize_proto::<Form>(&form_bytes).unwrap_or_default();
 
     if parsed_form.deadline > 0 {
         let now = SystemTime::now()
@@ -395,26 +450,77 @@ async fn blind_sign_route(
         }
     }
 
+    // Verify authorization based on participant mode
+    match parsed_form.participant_mode {
+        crate::pb::forms::ParticipantMode::LIST_OF_EMAILS => {
+            if !participant.starts_with("email:") {
+                return Ok(build_response(
+                    StatusCode::FORBIDDEN,
+                    "Email verification required",
+                ));
+            }
+            match forms_db::is_participant_allowed(&sd.db, form_id, &participant).await {
+                Ok(true) => {}
+                Ok(false) => {
+                    return Ok(build_response(
+                        StatusCode::FORBIDDEN,
+                        "You are not allowed to access this form",
+                    ));
+                }
+                Err(e) => {
+                    log::error!("is_participant_allowed error: {:?}", e);
+                    return Ok(internal_error_response());
+                }
+            }
+        }
+        crate::pb::forms::ParticipantMode::ANY_WITH_EMAIL => {
+            if !participant.starts_with("email:") {
+                return Ok(build_response(
+                    StatusCode::FORBIDDEN,
+                    "Email verification required",
+                ));
+            }
+        }
+        crate::pb::forms::ParticipantMode::NO_EMAIL_REQUIRED => {
+            // Guest or email allowed
+        }
+    }
+
+    let accepted = match parsed_form.participant_mode {
+        crate::pb::forms::ParticipantMode::LIST_OF_EMAILS => {
+            match forms_db::check_and_mark_participant_accepted(&sd.db, form_id, &participant).await {
+                Ok(true) => true,
+                Ok(false) => false,
+                Err(e) => {
+                    log::error!("check_and_mark_participant_accepted error: {:?}", e);
+                    return Ok(internal_error_response());
+                }
+            }
+        }
+        crate::pb::forms::ParticipantMode::ANY_WITH_EMAIL | crate::pb::forms::ParticipantMode::NO_EMAIL_REQUIRED => {
+            match forms_db::add_and_mark_open_participant_accepted(&sd.db, form_id, &participant, parsed_form.participant_cap).await {
+                Ok(true) => true,
+                Ok(false) => false,
+                Err(e) => {
+                    log::error!("add_and_mark_open_participant_accepted error: {:?}", e);
+                    return Ok(internal_error_response());
+                }
+            }
+        }
+    };
+
+    if !accepted {
+        return Ok(build_response(
+            StatusCode::FORBIDDEN,
+            "Already participated, not allowed, or participant cap reached.",
+        ));
+    }
+
     let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024 * 5).await {
         // 5MB
         Ok(b) => b,
         Err(_) => return Ok(bad_request_response()),
     };
-
-    // Mark user as participated
-    match forms_db::check_and_mark_participant_accepted(&sd.db, form_id, &participant).await {
-        Ok(true) => {}
-        Ok(false) => {
-            return Ok(build_response(
-                StatusCode::FORBIDDEN,
-                "Already participated or not allowed.",
-            ));
-        }
-        Err(e) => {
-            log::error!("check_and_mark_participant_accepted error: {:?}", e);
-            return Ok(internal_error_response());
-        }
-    }
 
     let signer = match forms_db::get_or_create_blind_signer(&sd).await {
         Ok(s) => s,
@@ -443,14 +549,12 @@ async fn submit_blind_route(
         Ok(b) => b,
         Err(_) => return Ok(not_found_response()),
     };
-    let mut reader_f = quick_protobuf::BytesReader::from_bytes(&form_bytes);
-    let parsed_form = match Form::from_reader(&mut reader_f, &form_bytes) {
+    let parsed_form = match crate::utils::deserialize_proto::<Form>(&form_bytes) {
         Ok(f) => f,
         Err(_) => return Ok(internal_error_response()),
     };
 
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
-    let blind_sub = match BlindSubmission::from_reader(&mut reader, &body_bytes) {
+    let blind_sub = match crate::utils::deserialize_proto::<BlindSubmission>(&body_bytes) {
         Ok(s) => s,
         Err(e) => {
             log::error!("BlindSubmission parse error: {:?}", e);
@@ -490,8 +594,7 @@ async fn submit_blind_route(
 
     // TODO: We MUST check that `payload` wasn't used before locally in cache or DB to prevent double submissions.
 
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&submission_bytes);
-    let mut submission = match FormSubmission::from_reader(&mut reader, &submission_bytes) {
+    let mut submission = match crate::utils::deserialize_proto::<FormSubmission>(&submission_bytes) {
         Ok(s) => s,
         Err(_) => return Ok(bad_request_response()),
     };
@@ -644,6 +747,17 @@ async fn submit_blind_route(
 
     submission.form_id = form_id;
 
+    let submission_count = match forms_db::get_form_submissions_count(&sd.db, form_id).await {
+        Ok(c) => c,
+        Err(_) => 0,
+    };
+    if parsed_form.participant_cap > 0 && submission_count >= parsed_form.participant_cap {
+        return Ok(build_response(
+            StatusCode::FORBIDDEN,
+            "Participant cap reached",
+        ));
+    }
+
     match forms_db::submit_form(&sd.db, submission).await {
         Ok(_) => Ok(ok_response("OK")),
         Err(e) => {
@@ -668,8 +782,7 @@ async fn get_results_route(
         Ok(b) => b,
         Err(_) => return Ok(not_found_response()),
     };
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&form_bytes);
-    let form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
+    let form = crate::utils::deserialize_proto::<Form>(&form_bytes).unwrap_or_default();
 
     if form.owner.as_ref() != participant {
         return Ok(build_response(
@@ -706,30 +819,41 @@ async fn get_results_route(
         Err(_) => 0,
     };
 
-    let mut out = Vec::new();
-    let mut writer = quick_protobuf::Writer::new(&mut out);
-
-    for sub_bytes in subs_bytes {
-        // FormResults has field 1 as repeated FormSubmission (tag 10)
-        writer.write_tag(10).expect("Failed to write tag");
-        writer
-            .write_bytes(&sub_bytes)
-            .expect("Failed to write bytes");
+    let mut submissions = Vec::new();
+    for s_bytes in &subs_bytes {
+        let sub = crate::utils::deserialize_proto::<FormSubmission>(s_bytes).unwrap_or_default();
+        submissions.push(sub);
     }
 
-    // Tag 18: Form form (tag 2, length delimited)
-    writer.write_tag(18).expect("Failed to write tag");
-    writer
-        .write_bytes(&form_bytes)
-        .expect("Failed to write bytes");
+    let tier = match forms_db::get_user_subscription_tier(&sd.db, &participant).await {
+        Ok(t) => t,
+        Err(_) => "free".to_string(),
+    };
 
-    // Tag 24: uint64 total_submissions (tag 3, varint)
-    writer.write_tag(24).expect("Failed to write tag");
-    writer
-        .write_uint64(total_count)
-        .expect("Failed to write uint64");
+    let submitter_emails_raw = if tier == "team" {
+        forms_db::get_form_submitter_emails(&sd.db, form_id).await.unwrap_or_default()
+    } else {
+        Vec::new()
+    };
 
-    Ok(ok_response(out))
+    let submitter_emails: Vec<std::borrow::Cow<'_, str>> = submitter_emails_raw
+        .iter()
+        .map(|s| std::borrow::Cow::Borrowed(s.as_str()))
+        .collect();
+
+    let form_results = FormResults {
+        submissions,
+        form: Some(form),
+        total_submissions: total_count,
+        submitter_emails,
+    };
+
+    let out = match crate::utils::serialize_proto(&form_results) {
+        Ok(o) => o,
+        Err(_) => return Ok(internal_error_response()),
+    };
+
+    Ok(proto_response(out, "FormResults"))
 }
 
 async fn list_my_forms_route(
@@ -741,21 +865,58 @@ async fn list_my_forms_route(
         None => return Ok(unauthorized_response()),
     };
 
-    match forms_db::get_forms_by_owner(&sd.db, &participant).await {
+    let query = req.uri().query().unwrap_or("");
+    let mut page = 1;
+    let mut limit = 10;
+
+    for part in query.split('&') {
+        let mut kv = part.splitn(2, '=');
+        let k = kv.next().unwrap_or("");
+        let v = kv.next().unwrap_or("");
+        if k == "page" {
+            page = v.parse().unwrap_or(1);
+        } else if k == "limit" {
+            limit = v.parse().unwrap_or(10);
+        }
+    }
+
+    let offset = (page - 1) * limit;
+
+    let total_forms_count = match forms_db::get_owner_form_count(&sd.db, &participant).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("get_owner_form_count error: {:?}", e);
+            return Ok(internal_error_response());
+        }
+    };
+
+    let total_subs_count = match forms_db::get_owner_total_submissions(&sd.db, &participant).await {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!("get_owner_total_submissions error: {:?}", e);
+            return Ok(internal_error_response());
+        }
+    };
+
+    match forms_db::get_forms_by_owner(&sd.db, &participant, limit as i64, offset as i64).await {
         Ok(forms_bytes) => {
-            let mut out = Vec::new();
-            let mut writer = quick_protobuf::Writer::new(&mut out);
+            let forms: Vec<Form> = forms_bytes
+                .iter()
+                .map(|b| crate::utils::deserialize_proto::<Form>(b).unwrap_or_default())
+                .collect();
 
-            for form_bytes in forms_bytes {
-                // UserForms has field 1 as repeated Form
-                // Tag 10
-                writer.write_tag(10).expect("Failed to write tag");
-                writer
-                    .write_bytes(&form_bytes)
-                    .expect("Failed to write bytes");
-            }
+            let user_forms = UserForms {
+                forms,
+                total_forms: total_forms_count,
+                total_submissions: total_subs_count,
+            };
 
-            Ok(ok_response(out))
+            let out = match crate::utils::serialize_proto(&user_forms) {
+                Ok(o) => o,
+                Err(_) => return Ok(internal_error_response()),
+            };
+
+            Ok(proto_response(out, "UserForms"))
         }
         Err(e) => {
             log::error!("get_forms_by_owner error: {:?}", e);
@@ -773,8 +934,7 @@ async fn request_otp_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
-    let otp_request = match OtpRequest::from_reader(&mut reader, &body_bytes) {
+    let otp_request = match crate::utils::deserialize_proto::<OtpRequest>(&body_bytes) {
         Ok(o) => o,
         Err(_) => return Ok(bad_request_response()),
     };
@@ -796,8 +956,7 @@ async fn verify_otp_route(
         Err(_) => return Ok(bad_request_response()),
     };
 
-    let mut reader = quick_protobuf::BytesReader::from_bytes(&body_bytes);
-    let otp_verify = match OtpVerify::from_reader(&mut reader, &body_bytes) {
+    let otp_verify = match crate::utils::deserialize_proto::<OtpVerify>(&body_bytes) {
         Ok(o) => o,
         Err(_) => return Ok(bad_request_response()),
     };
@@ -835,14 +994,14 @@ async fn common_request_otp(
             Ok(b) => b,
             Err(_) => return Ok(not_found_response()),
         };
-        let mut reader = quick_protobuf::BytesReader::from_bytes(&form_bytes);
-        let parsed_form = Form::from_reader(&mut reader, &form_bytes).unwrap_or_default();
+        let parsed_form = crate::utils::deserialize_proto::<Form>(&form_bytes).unwrap_or_default();
 
         let email_prefixed = format!("email:{}", email);
-        if !parsed_form
-            .allowed_participants
-            .iter()
-            .any(|e| e.as_ref() == email || e.as_ref() == email_prefixed)
+        if parsed_form.participant_mode == crate::pb::forms::ParticipantMode::LIST_OF_EMAILS
+            && !parsed_form
+                .allowed_participants
+                .iter()
+                .any(|e| e.as_ref() == email || e.as_ref() == email_prefixed)
         {
             return Ok(build_response(
                 StatusCode::FORBIDDEN,
@@ -909,6 +1068,72 @@ async fn common_verify_otp(
         )),
         Err(e) => {
             log::error!("verify_otp error: {:?}", e);
+            Ok(internal_error_response())
+        }
+    }
+}
+
+#[derive(serde::Deserialize)]
+struct SendReplyRequest {
+    email: String,
+}
+
+async fn send_reply_route(
+    req: Request<Incoming>,
+    sd: Arc<SharedData>,
+    form_id: u64,
+) -> Result<Response<Full<Bytes>>, std::convert::Infallible> {
+    let body_bytes = match limit_and_collect(req.into_body(), 1024 * 1024).await {
+        Ok(b) => b,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    let request_data: SendReplyRequest = match serde_json::from_slice(&body_bytes) {
+        Ok(d) => d,
+        Err(_) => return Ok(bad_request_response()),
+    };
+
+    // 1. Fetch form
+    let form_bytes = match forms_db::get_form_bytes(&sd.db, form_id).await {
+        Ok(b) => b,
+        Err(_) => return Ok(not_found_response()),
+    };
+    let form = crate::utils::deserialize_proto::<Form>(&form_bytes).unwrap_or_default();
+
+    // 2. Verify form has custom reply message
+    if form.submission_reply_message.is_empty() {
+        return Ok(build_response(
+            StatusCode::BAD_REQUEST,
+            "Form does not support reply messages",
+        ));
+    }
+
+    // 3. Verify form owner's tier is pro or team
+    let tier = match forms_db::get_user_subscription_tier(&sd.db, &form.owner).await {
+        Ok(t) => t,
+        Err(_) => "free".to_string(),
+    };
+    if tier != "pro" && tier != "team" {
+        return Ok(build_response(
+            StatusCode::BAD_REQUEST,
+            "Form owner is not eligible for reply messages",
+        ));
+    }
+
+    // 4. Rate-limit via database check
+    match forms_db::check_and_log_reply_sent(&sd.db, form_id, &request_data.email).await {
+        Ok(true) => {
+            Ok(ok_response("OK"))
+        }
+        Ok(false) => {
+            // Already sent
+            Ok(build_response(
+                StatusCode::TOO_MANY_REQUESTS,
+                "Reply email already queued or sent for this form",
+            ))
+        }
+        Err(e) => {
+            log::error!("check_and_log_reply_sent error: {:?}", e);
             Ok(internal_error_response())
         }
     }

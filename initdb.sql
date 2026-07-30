@@ -86,3 +86,41 @@ ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS razorpay_subscription_id
 ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS razorpay_plan_id VARCHAR;
 ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS subscription_status SMALLINT NOT NULL DEFAULT 0;
 ALTER TABLE user_subscriptions ADD COLUMN IF NOT EXISTS current_period_end TIMESTAMPTZ;
+
+-- # migrations
+-- reason: track reply emails sent to prevent abuse on open forms
+CREATE TABLE IF NOT EXISTS form_reply_log (
+    form_id BIGINT NOT NULL REFERENCES forms(id) ON DELETE CASCADE,
+    email VARCHAR(255) NOT NULL,
+    sent_at TIMESTAMPTZ DEFAULT NOW(),
+    PRIMARY KEY (form_id, email)
+);
+
+-- # migrations
+-- reason: support participant_mode, participant_cap, and custom reply receipt messages directly as DB columns on the forms table
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS participant_mode SMALLINT NOT NULL DEFAULT 0;
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS participant_cap INT NOT NULL DEFAULT 0;
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS submission_reply_message VARCHAR(255) NOT NULL DEFAULT '';
+
+
+-- # migrations
+-- reason: track submission counts natively using triggers to avoid querying counts repeatedly
+ALTER TABLE forms ADD COLUMN IF NOT EXISTS submission_count INT NOT NULL DEFAULT 0;
+
+UPDATE forms f SET submission_count = (SELECT COUNT(form_id) FROM form_submissions s WHERE s.form_id = f.id);
+
+CREATE OR REPLACE FUNCTION increment_submission_count()
+RETURNS TRIGGER AS $$
+BEGIN
+    UPDATE forms
+    SET submission_count = submission_count + 1
+    WHERE id = NEW.form_id;
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trg_increment_submission_count
+AFTER INSERT ON form_submissions
+FOR EACH ROW
+EXECUTE FUNCTION increment_submission_count();
+

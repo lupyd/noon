@@ -7,7 +7,8 @@ import {
   FieldValue,
   BlindSubmission,
   FormResults,
-  UserForms
+  UserForms,
+  ParticipantMode
 } from './generated/forms';
 
 export type {
@@ -21,14 +22,24 @@ export type {
   UserForms as UserFormsType
 };
 
-export { FieldType };
+export { FieldType, ParticipantMode };
 
 export function encodeForm(payload: Form): Uint8Array {
   return Form.encode(payload).finish();
 }
 
+const isDev = import.meta.env.DEV;
+
+function logDev(messageType: string, decoded: any) {
+  if (isDev) {
+    console.log(`[Proto Debug] Decoded ${messageType}:`, decoded);
+  }
+}
+
 export function decodeForm(buffer: Uint8Array): Form {
-  return Form.decode(buffer);
+  const decoded = Form.decode(buffer);
+  logDev('Form', decoded);
+  return decoded;
 }
 
 export function encodeFormSubmission(payload: FormSubmission): Uint8Array {
@@ -36,7 +47,9 @@ export function encodeFormSubmission(payload: FormSubmission): Uint8Array {
 }
 
 export function decodeFormSubmission(buffer: Uint8Array): FormSubmission {
-  return FormSubmission.decode(buffer);
+  const decoded = FormSubmission.decode(buffer);
+  logDev('FormSubmission', decoded);
+  return decoded;
 }
 
 export function encodeBlindSubmission(payload: BlindSubmission): Uint8Array {
@@ -44,11 +57,15 @@ export function encodeBlindSubmission(payload: BlindSubmission): Uint8Array {
 }
 
 export function decodeFormResults(buffer: Uint8Array): FormResults {
-  return FormResults.decode(buffer);
+  const decoded = FormResults.decode(buffer);
+  logDev('FormResults', decoded);
+  return decoded;
 }
 
 export function decodeUserForms(buffer: Uint8Array): UserForms {
-  return UserForms.decode(buffer);
+  const decoded = UserForms.decode(buffer);
+  logDev('UserForms', decoded);
+  return decoded;
 }
 
 export function encodeOtpRequest(payload: OtpRequest): Uint8Array {
