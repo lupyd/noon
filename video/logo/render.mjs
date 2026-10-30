@@ -17,7 +17,7 @@ const arg = (k) => {
 }
 mkdirSync(OUT, { recursive: true })
 
-const types = { '.html': 'text/html', '.svg': 'image/svg+xml', '.js': 'text/javascript' }
+const types = { '.html': 'text/html', '.svg': 'image/svg+xml', '.js': 'text/javascript', '.woff2': 'font/woff2' }
 const server = http.createServer((req, res) => {
   const f = path.join(ROOT, decodeURIComponent(new URL(req.url, 'http://x').pathname))
   if (!f.startsWith(ROOT) || !existsSync(f)) return res.writeHead(404).end()

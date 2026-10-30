@@ -1,0 +1,16 @@
+{
+  "engine": "kokoro",
+  "kokoro": { "voice": "af_heart", "speed": 0.95, "lang": "a", "lexicon": {} },
+  "lines": [
+    { "id": "intro1", "scene": "intro", "text": "People only tell you the truth when it's safe to." },
+    { "id": "intro2", "scene": "intro", "text": "Introducing Noon." },
+    { "id": "problem", "scene": "problem", "text": "Most anonymous forms still know who answered. They just promise not to look." },
+    { "id": "create", "scene": "create", "text": "Start from a template, choose exactly who can respond, and share one link." },
+    { "id": "respond", "scene": "respond", "text": "Your team proves they're invited with a one-time code. Then they answer." },
+    { "id": "blind1", "scene": "blind", "text": "Before anything leaves the browser, Noon blinds it." },
+    { "id": "blind2", "scene": "blind", "text": "The server signs what it can't read. So the answer arrives with proof, but no name." },
+    { "id": "results", "scene": "results", "text": "You see who responded, and what they said. Never who said what." },
+    { "id": "cta1", "scene": "cta", "text": "Noon. Honest answers, by design." },
+    { "id": "cta2", "scene": "cta", "text": "Free to start, and open source.", "caption": "Free to start, and open source." }
+  ]
+}
