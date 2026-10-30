@@ -1,0 +1,14 @@
+{
+  "name": "noon-showcase-video",
+  "private": true,
+  "type": "module",
+  "version": "0.1.0",
+  "description": "Deterministic pipeline for the Noon showcase video",
+  "scripts": {
+    "logo:trace": "cd logo && python3 trace.py ../../assets/noon.webp noon-logo.svg",
+    "logo:render": "node logo/render.mjs"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^24.0.0"
+  }
+}
