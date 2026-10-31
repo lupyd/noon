@@ -499,6 +499,8 @@ code {
 .form-submission .header-section { margin-bottom: 5rem; text-align: center; }
 .field-card { padding: 1.5rem 2rem; }
 .field-card > label { gap: 1rem; }
+/* choice indicators sit centred on their label (drop the browser's 3px top margin) */
+.field-card input[type="radio"], .field-card input[type="checkbox"] { margin: 0; flex: none; }
 .submit-row { margin-top: 4rem; display: flex; flex-direction: column; align-items: center; }
 .submit-row .primary-button { min-width: 300px; }
 /* text answers wrap and grow (FormSubmission GrowingText) */
@@ -952,7 +954,7 @@ code {
   .form-submission .header-section h1 { font-size: 2.25rem !important; line-height: 1.1; }
   .form-submission .description { font-size: 1.05rem !important; }
   .field-card { padding: 1.1rem 1rem; }
-  .field-card label { margin-bottom: 0.75rem !important; }
+  .field-card > label { margin-bottom: 0.75rem !important; }
   .submit-row { margin-top: 1.75rem; }
   .submit-row .primary-button { min-width: 0; width: 100%; }
 
