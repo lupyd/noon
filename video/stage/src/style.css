@@ -268,7 +268,8 @@ iframe { border: 0; display: block; background: transparent; }
   --display: 'Fraunces Variable', 'Fraunces', Georgia, serif;
 }
 .v4-bg { background: radial-gradient(ellipse 85% 80% at 50% 36%, #fffaf0 0%, #fbf0d8 55%, #f2deb4 100%); }
-.noon-night { position: absolute; inset: 0; background: radial-gradient(ellipse 80% 75% at 50% 42%, #2a2866 0%, #1c1a4c 55%, #100f30 100%); }
+.noon-night { position: absolute; inset: 0; background: radial-gradient(ellipse 85% 80% at 40% 46%, #26245e 0%, #232156 45%, #1b1a48 100%); }
+.noon-stars { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
 .noon-dawn { position: absolute; inset: 0; opacity: 0; }
 
 /* the app window: a light browser, its address bar on noon.lupyd.com */

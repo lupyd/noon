@@ -53,10 +53,13 @@ function frameAt(cx: number, cy: number, h: number, focus = CONTENT_C) {
 export const logoScene: SceneBuilder = ({ root, s, dur }) => {
   const mode = (s as any).mode ?? 'intro'
   const intro = mode === 'intro'
+  // intro: one continuous move — the pull-out from the spiral and the drift left
+  // are the same eased motion, landing where the title sets in
   const T = intro
-    ? { spin: [0, 0.9], zoom: [0.2, 3.6], flames: [1.6, 3.4], slide: [4.1, 5.2], l1: [4.55, 5.3], l2: [4.7, 5.5], l3: [99, 99] }
-    : { spin: [-30, -29], zoom: [-1, -0.5], flames: [-1, -0.5], slide: [0.7, 1.8], l1: [1.05, 1.8], l2: [1.3, 2.1], l3: [1.6, 2.4] }
-  const ZOOM0 = 4.6
+    ? { spin: [0, 0.9], move: [0.2, 4.6], flames: [1.6, 3.4], l1: [3.75, 4.6], l2: [3.95, 4.8], l3: [99, 99] }
+    : { spin: [-30, -29], move: [0.7, 1.8], flames: [-1, -0.5], l1: [1.05, 1.8], l2: [1.3, 2.1], l3: [1.6, 2.4] }
+  const ZOOM0 = intro ? 4.6 : 1 // magnification at the start of the move
+  const ZOOM1 = 0.8 // at rest, beside the title
   const title = el('div', { class: intro ? 'noon-title' : 'noon-title day' })
   const lines = intro
     ? [el('div', { class: 'nt-intro' }, 'Introducing'), el('div', { class: 'nt-name' }, 'Noon')]
@@ -65,8 +68,7 @@ export const logoScene: SceneBuilder = ({ root, s, dur }) => {
   const black = el('div', { class: 'layer', style: 'background:#000;opacity:0' })
   root.append(title, black)
   const ranges = intro ? [T.l1, T.l2] : [T.l1, T.l2, T.l3]
-  cue(s.start + T.slide[0], 'whoosh', 0.35)
-  if (intro) cue(s.start + T.zoom[0], 'whoosh', 0.25)
+  cue(s.start + T.move[0], 'whoosh', intro ? 0.3 : 0.35)
 
   const update = (lt: number) => {
     if (canvas.parentElement !== root) root.prepend(canvas)
@@ -75,14 +77,17 @@ export const logoScene: SceneBuilder = ({ root, s, dur }) => {
     const sp = T.spin[1] - T.spin[0]
     const angle = ((SPIN * Math.PI) / 180) * sp * smoothInt((lt - T.spin[0]) / sp)
     const amp = smooth(p01(lt, T.flames[0], T.flames[1]))
-    // camera: zoom eased in log space; the focus travels in proportion to the view width
-    const z = Math.exp(Math.log(ZOOM0) * (1 - inOutCubic(p01(lt, T.zoom[0], T.zoom[1]))))
-    const w = (1 / z - 1 / ZOOM0) / (1 - 1 / ZOOM0)
-    const f0 = logo?.suns[0].c ?? CONTENT_C
+    // camera: zoom eased in log space; the focus (sun → whole logo) and its place on
+    // screen (centre → left) travel in proportion to the view width, so the zoom and
+    // the drift read as one motion
+    const u = intro ? inOutCubic(p01(lt, T.move[0], T.move[1])) : outQuint(p01(lt, T.move[0], T.move[1]))
+    const z = Math.exp(lerp(Math.log(ZOOM0), Math.log(ZOOM1), u))
+    const w = intro ? (1 / z - 1 / ZOOM0) / (1 / ZOOM1 - 1 / ZOOM0) : u
+    const f0 = intro ? logo?.suns[0].c ?? CONTENT_C : CONTENT_C
     const focus = [f0[0] + (CONTENT_C[0] - f0[0]) * w, f0[1] + (CONTENT_C[1] - f0[1]) * w]
-    const sl = outQuint(p01(lt, T.slide[0], T.slide[1]))
-    const r = frameAt(lerp(W / 2, W * 0.3, sl), H / 2, 0.82 * z * lerp(1, 0.8, sl), focus)
-    if (logo) logo.draw({ t: s.start + lt, amp, angle, rect: r.map((v) => v * dpr), sky: intro })
+    const r = frameAt(lerp(W / 2, W * 0.3, w), H / 2, 0.82 * z, focus)
+    // no sky of its own: the logo sits on the film's night (with its fixed stars) or on daylight
+    if (logo) logo.draw({ t: s.start + lt, amp, angle, rect: r.map((v) => v * dpr), sky: false })
     ranges.forEach((rg, i) => {
       const u = outQuint(p01(lt, rg[0], rg[1]))
       css(lines[i], { opacity: u.toFixed(3), transform: `translateY(${((1 - u) * 36).toFixed(1)}px)` })

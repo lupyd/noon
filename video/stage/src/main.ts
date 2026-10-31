@@ -1,7 +1,7 @@
 import './style.css'
 import { css, div, el } from './dom'
 import { runSeekHooksSync, setKeepMounted, syncFrames } from './frames'
-import { clamp, ease, hash, lerp, noise1, prog } from './motion'
+import { clamp, ease, hash, lerp, mulberry32, noise1, prog } from './motion'
 import type { SceneAPI, SceneT, Timeline } from './types'
 import { SCENES } from './scenes/index'
 import { CUES } from './cues'
@@ -60,6 +60,37 @@ function grainTile(seed: number) {
   return c.toDataURL()
 }
 
+/**
+ * The night's stars: fixed to the frame (the camera never moves them), drawn
+ * once, in the logo's own star colour and sizes. They clear the title's place
+ * beside the logo, and go with the night at sunrise.
+ */
+function starfield() {
+  const c = document.createElement('canvas')
+  const k = window.devicePixelRatio || 1
+  c.width = 1920 * k
+  c.height = 1080 * k
+  c.className = 'noon-stars'
+  const g = c.getContext('2d')!
+  g.scale(k, k)
+  g.fillStyle = '#f2ebcb'
+  const rnd = mulberry32(1024)
+  const title = { x0: 1040, x1: 1840, y0: 300, y1: 780 }
+  const placed: [number, number][] = []
+  for (let tries = 0; placed.length < 64 && tries < 4000; tries++) {
+    const x = 24 + rnd() * 1872
+    const y = 24 + rnd() * 1032
+    if (x > title.x0 && x < title.x1 && y > title.y0 && y < title.y1) continue
+    if (placed.some(([px, py]) => Math.hypot(px - x, py - y) < 120)) continue
+    placed.push([x, y])
+    const r = [1.8, 2.2, 2.6, 3.1, 3.8, 4.6][Math.floor(rnd() ** 1.7 * 6)]
+    g.beginPath()
+    g.arc(x, y, r, 0, Math.PI * 2)
+    g.fill()
+  }
+  return c
+}
+
 async function boot() {
   const thumbMode = new URLSearchParams(location.search).has('thumb')
   const tl: Timeline = thumbMode
@@ -85,6 +116,7 @@ async function boot() {
   // night to noon: the night sky covers the daylight until the sunrise, which
   // sweeps up from below the frame into the cut to the first product shot
   const night = el('div', { class: 'noon-night' })
+  night.append(starfield())
   const dawn = el('div', { class: 'noon-dawn' })
   bg.append(night, dawn)
   const SUNRISE = (tl.scenes.find((x) => x.id === 'create')?.start ?? 0) - 0.9
