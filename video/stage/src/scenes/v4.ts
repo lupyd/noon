@@ -157,7 +157,7 @@ export const clip: SceneBuilder = ({ root, s, dur }) => {
     (lt: number) => {
       title?.(lt)
       const ct = clipT(lt)
-      const io = inOut(lt, dur, enter, exit, title ? TITLE.done - 0.15 : 0)
+      const io = inOut(lt, dur, enter, exit, title ? TITLE.done : 0)
       // camera: a slow dolly, then the one push-in (same easing family everywhere)
       let v: View = { x: 960, y: 540, z: 1 + 0.02 * clamp((lt - off) / Math.max(1, dur - off)) }
       let pin = 0
@@ -319,7 +319,7 @@ export const everywhere: SceneBuilder = ({ root, s, dur }) => {
   return Object.assign(
     (lt: number) => {
       title?.(lt)
-      const io = inOut(lt, dur, 'rise', 'recede', title ? TITLE.done - 0.15 : 0)
+      const io = inOut(lt, dur, 'rise', 'recede', title ? TITLE.done : 0)
       const back = ep(lt, RISE - 0.1, RISE + 0.9)
       place(g.win, g.W, g.H, { x: lerp(960, 640, back), y: lerp(540, 520, back), z: io.z - 560 * back, ry: 26 * back, rx: io.rx, o: io.o * (1 - 0.4 * back), blur: io.blur + 3 * back })
       sweep(g.gloss, clamp((lt - off + 0.3) / 1.0))

@@ -128,7 +128,7 @@ export const phoneScene: SceneBuilder = ({ root, s, dur }) => {
   for (const a of b.actions) if (a.kind === 'type' && a.t >= b.in) for (let i = 0; i < ((a as any).text?.length ?? 0); i += 2) cue(S0 + stageAt(sp, b.in, a.t + (i / (a as any).text.length) * ((a.end ?? a.t) - a.t)), 'key', 0.1)
   const update = (lt: number) => {
     title?.(lt)
-    const io = inOut(lt, dur, 'rise', 'recede', title ? TITLE.done - 0.15 : 0)
+    const io = inOut(lt, dur, 'rise', 'recede', title ? TITLE.done : 0)
     place(ph.el, ph.W, ph.H, { x: W / 2, y: H / 2, z: io.z, rx: io.rx, s: io.s, o: io.o, blur: io.blur })
     sweep(ph.gloss, clamp((lt - off + 0.2) / 1.2))
     const ct = clipT(lt)
