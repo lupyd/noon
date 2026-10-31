@@ -1,13 +1,34 @@
 # Noon showcase: direction
 
-Same craft rules as the Lupyd showcase (Linear / Raycast / Apple launch films): one
-thing on screen at a time, big and crisp, deliberate motion, no clutter. The pipeline is
-the Lupyd one, ported: record the real app, stage it, VO + score + SFX, render.
+The pipeline is ported from the Lupyd showcase (record the real app, stage it, VO + score
++ SFX, render), but the film is Noon's own: its own concept, look and music. Nothing
+visual or musical is carried over from Lupyd.
 
 ## The story in one line
 
 People only tell the truth when it can't be traced back to them. Noon makes that a
 property of the math, not a promise in a privacy policy.
+
+## Concept: night to noon
+
+The film opens in the logo's night sky (the logo is two suns burning in the dark): the
+spiral pull-out, "Introducing Noon", and the problem ("anonymous" forms still know who
+you are) all happen at night. On the cut into the product the sun rises: a warm band
+sweeps up from below the frame and everything after it is daylight. The product, where
+answers come out into the open with nothing hiding in the shadows, plays at noon. The end
+card puts the burning logo on daylight.
+
+- **Palette** from the logo: night navy #232156 (ink by day), sun #e75b32, amber #ef8d2c,
+  cream #f8e4a6; daylight is warm paper (#fffaf0 → #f2deb4).
+- **Type**: Fraunces (soft, warm serif) for everything the film says; Inter only inside UI
+  details.
+- **App**: Noon's own light theme, framed as a light browser window on noon.lupyd.com
+  (Noon is a web app); the respondent on one phone.
+- **Music**: an original score that follows the light (`music/compose.py`, 96 BPM): choir,
+  celesta and cello at night in D minor; at sunrise a strum lands on the cut and it opens
+  to F major with fingerpicked nylon guitar, marimba, acoustic bass and hand percussion;
+  pizzicato and celesta hush the blind-signature beat; a flute hook carries the results
+  and the end card.
 
 ## Audience
 
@@ -25,13 +46,12 @@ Lead with honest feedback at work; the cryptography is the proof, not the pitch.
    (`scripts/beats.mjs` → `scripts/record.mjs`), 1536×864 @2×, actions and rects logged.
    The stage only adds framing, camera, type and transitions.
 3. **Camera moves are derived** from logged rects; at most one push-in per beat.
-4. **Dark app theme everywhere.** The background is the logo's night navy, so the film
-   opens and closes inside the logo's world.
+4. **Night, then noon.** Night navy only before the sunrise; daylight paper after it.
 5. **No slop.** No floating chips, eyebrow labels, neon outlines, glow blobs or gradient
    text. Information is carried by the real UI plus the VO; a plain title card at most.
 6. **Live only.** The blind-signature beat animates the respondent's *actual* answer from
    the respond recording, not a stock diagram.
-7. **Rhythm.** Beats 4–9 s, cuts on the music (120 BPM grid), whole film 60–75 s.
+7. **Rhythm.** Cuts on the music (96 BPM grid), whole film 60–75 s.
 
 ## Shot list (VO in quotes)
 
@@ -47,7 +67,9 @@ Lead with honest feedback at work; the cryptography is the proof, not the pitch.
 
 ## Data
 
-- Owner: maya@halcyonlabs.io (Team plan), Halcyon Labs platform org.
+- People are on lupyd.com (the owner, maya@lupyd.com on a Team plan, and the 40-person
+  platform team); open-form guests use reserved example domains. No real third-party
+  companies or domains anywhere.
 - Background forms on the dashboard: Lisbon Offsite Feedback (27), Manager 360 · Platform
   (12), Customer Satisfaction · Q3 (46, open guest mode), Exit Interview (4).
 - Q3 Team Pulse is created live in the create beat; its responses come from the respond

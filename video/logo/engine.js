@@ -22,7 +22,8 @@ uniform sampler2D uTex, uStars, uDetail;
 uniform vec4 uDetailBox;     // detail raster region: x, y, w, h (logo px)
 uniform vec2 uRes;
 uniform vec3 uRect;          // logo square: x, y (top-left, px), size (px)
-uniform float uT, uAmp;
+uniform float uT, uAmp, uStarsOn;
+uniform vec4 uBg;            // sky behind the logo, premultiplied (alpha 0 = transparent)
 uniform vec2 uAngle;         // spiral rotation per sun, radians
 uniform vec4 uSun[2];        // spin centre xy, spin radius, rim radius (logo px)
 uniform vec2 uRimC[2];       // rim centre (logo px)
@@ -112,7 +113,7 @@ void main() {
     vec2 c = uSun[k].xy;
     if (length(p - c) < uSun[k].z) {
       float a = k == 0 ? uAngle.x : uAngle.y;
-      gl_FragColor = tex(c + rot(p - c, -a));
+      gl_FragColor = tex(c + rot(p - c, -a)); // the spiral disk is opaque
       return;
     }
   }
@@ -125,8 +126,12 @@ void main() {
   vec2 d = (d0 * w0 + d1 * w1) / max(w0 + w1, 1e-4);
   d *= smoothstep(6.0, 30.0, min(r0, r1));
   vec2 q = p - d * uAmp;
-  vec4 col = (q.x < 0.0 || q.y < 0.0 || q.x > 1024.0 || q.y > 1024.0) ? tex(vec2(4.0)) : tex(q);
-  gl_FragColor = vec4(mix(col.rgb, st.rgb / max(st.a, 1e-4) * (st.a > 0.0 ? 1.0 : 0.0), st.a), 1.0);
+  // logo rasters are premultiplied and transparent outside the drawing
+  vec4 col = (q.x < 0.0 || q.y < 0.0 || q.x > 1024.0 || q.y > 1024.0) ? vec4(0.0) : tex(q);
+  vec4 base = col + uBg * (1.0 - col.a);
+  float sa = st.a * uStarsOn;
+  vec3 srgb = st.rgb / max(st.a, 1e-4);
+  gl_FragColor = vec4(base.rgb * (1.0 - sa) + srgb * sa, base.a * (1.0 - sa) + sa);
 }`
 
 
@@ -157,11 +162,13 @@ export async function createLogo(canvas, { svgUrl, tex = 4096, starTex = 4096, d
     c.getContext('2d').drawImage(img, 0, 0, size, size)
     return c
   }
-  const sceneTex = await raster(tex, (d) => d.getElementById('stars').remove())
+  // The logo itself, without its night sky or stars: draw() lays the sky (or nothing) behind it.
+  const bare = (d) => ['stars', 'bg'].forEach((id) => d.getElementById(id).remove())
+  const sceneTex = await raster(tex, bare)
   // detail region: a square around the first sun's spiral, slightly past its rim
   const half = Math.ceil(suns[0].rim + 40)
   const box = [suns[0].c[0] - half, suns[0].c[1] - half, 2 * half, 2 * half]
-  const detailTex = await raster(detail, (d) => d.getElementById('stars').remove(), box)
+  const detailTex = await raster(detail, bare, box)
   const starsTex = await raster(starTex, (d) => {
     for (const el of [...d.documentElement.children]) if (el.id !== 'stars') el.remove()
   })
@@ -194,11 +201,13 @@ export async function createLogo(canvas, { svgUrl, tex = 4096, starTex = 4096, d
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE)
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE)
   }
-  // Straight (non-premultiplied) alpha for the star layer.
-  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+  // The logo layers are premultiplied (clean edges when filtered over any sky);
+  // the star layer stays straight alpha.
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true)
   upload(0, sceneTex)
-  upload(1, starsTex)
   upload(2, detailTex)
+  gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false)
+  upload(1, starsTex)
   // the 2D rasters are on the GPU now; drop the CPU copies
   for (const c of [sceneTex, starsTex, detailTex]) c.width = c.height = 0
   // out of GPU memory shows up here, not as an exception: fail loudly, never render black
@@ -217,8 +226,17 @@ export async function createLogo(canvas, { svgUrl, tex = 4096, starTex = 4096, d
 
   return {
     suns,
-    /** t: animation clock (s); amp: flame strength 0..1; angle: spiral rotation (rad); rect: logo square [x, y, size] in canvas px */
-    draw({ t, amp, angle, rect }) {
+    /**
+     * t: animation clock (s); amp: flame strength 0..1; angle: spiral rotation (rad);
+     * rect: logo square [x, y, size] in canvas px; sky: the night sky behind the logo
+     * (false = transparent canvas, stars off)
+     */
+    draw({ t, amp, angle, rect, sky = true }) {
+      const [r, g, b] = [0x23, 0x21, 0x56].map((v) => v / 255) // NAVY, the logo's own background
+      gl.uniform4f(U('uBg'), ...(sky ? [r, g, b, 1] : [0, 0, 0, 0]))
+      gl.uniform1f(U('uStarsOn'), sky ? 1 : 0)
+      gl.clearColor(0, 0, 0, 0)
+      gl.clear(gl.COLOR_BUFFER_BIT)
       gl.uniform2f(U('uRes'), canvas.width, canvas.height)
       gl.uniform1f(U('uT'), t)
       gl.uniform1f(U('uAmp'), amp)

@@ -16,11 +16,11 @@ const seed = (...args) => {
   if (r.status !== 0) throw new Error(`seed ${args.join(' ')}: ${r.stderr}`)
   return r.stdout.trim()
 }
-const OWNER = 'maya@halcyonlabs.io'
-const ownerAuth = () => ({ theme: 'dark', noon_verified_email: OWNER, noon_email_token: seed('token', OWNER) })
+const OWNER = 'maya@lupyd.com'
+const ownerAuth = () => ({ theme: 'light', noon_verified_email: OWNER, noon_email_token: seed('token', OWNER) })
 
 export const FORM = 'Q3 Team Pulse'
-export const RESPONDENT = 'priya.raman@halcyonlabs.io'
+export const RESPONDENT = 'priya.raman@lupyd.com'
 /** what Priya writes, and what the blind beat carries */
 export const ANSWER = 'Release freezes keep getting extended, and nobody says why.'
 

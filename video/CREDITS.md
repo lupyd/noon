@@ -7,7 +7,7 @@
 | Sound effects | Synthesised (`music/sfx.py`) | original work |
 | Voiceover model Kokoro-82M (hexgrad) | https://huggingface.co/hexgrad/Kokoro-82M | Apache-2.0 |
 | G2P misaki | https://github.com/hexgrad/misaki | Apache-2.0 |
-| Inter, JetBrains Mono, Newsreader | via @fontsource-variable | SIL OFL 1.1 |
+| Fraunces (display), Inter, JetBrains Mono | via @fontsource-variable | SIL OFL 1.1 |
 | Pixel 9 Pro frame (`stage/public/pixel-9-pro.webp`) | carried over from the Lupyd showcase pipeline | as credited there |
 | Simplex noise in `logo/engine.js` | Ashima Arts / Stefan Gustavson | MIT |
 

@@ -2,22 +2,22 @@
 # requires-python = ">=3.10"
 # dependencies = ["mido", "numpy", "soundfile"]
 # ///
-"""Original score for the Noon showcase, composed in code.
+"""Original score for the Noon showcase, composed in code: "night to noon".
 
-Reads out/timeline.json (scene starts are whole bars at its BPM) and writes:
+Reads out/timeline.json (scene starts sit on the beat grid at its BPM) and writes:
   out/music/score.mid          full arrangement (General MIDI)
   out/music/stems/<name>.wav   each part rendered with FluidSynth + GeneralUser GS
-  out/music/music.wav          stems mixed with kick-keyed sidechain ducking
+  out/music/music.wav          stems mixed
 
-Style: warm, minimal, uplifting tech-product bed. D major, vi-IV-I-V family.
-  hook     pads only, sparse bell motif
-  problem  darker minor voicings, muted 8th pulse, riser into the reveal
-  reveal   impact + plucked arpeggio enters (the lift)
-  e2ee..   groove: soft 808 kick/hat, sub bass, arp
-  teams    full: adds EP counter-melody + claps
-  gamers   energy: 16th hats, saw-lead hook, chord stabs
-  everyw.  full build
-  cta      drop to a big held chord, then a quiet bed for the end card
+The film opens in the logo's night sky and the product plays out in daylight;
+the score follows it:
+  intro    night: choir pad, celesta twinkle, cello drone (D minor); a lift on the title
+  problem  the night darkens: cello pulse, sparse celesta, swell into the sunrise
+  create   sunrise: F major, fingerpicked nylon guitar, marimba, acoustic bass, shaker
+  respond  the groove carries on
+  blind    hushed: pizzicato and celesta, minor turn, resolves to F
+  results  full daylight: groove + tambourine + flute hook
+  cta      a strummed Fmaj9 rings out with celesta and the flute's last phrase
 """
 import json
 import subprocess
@@ -36,228 +36,202 @@ TPB = 480
 
 tl = json.loads((ROOT / "out" / "timeline.json").read_text())
 BPM = tl["bpm"]
-BAR_S = tl["bar"]
-TOTAL_BARS = round(tl["duration"] / BAR_S)
-# Noon scene ids → the arrangement styles below: the logo intro is the pad-and-bell
-# hook, the problem card darkens, the product lifts in on "create", the groove carries
-# the respond/blind beats, results gets the full band, then the end card.
-STYLE = {"intro": "hook", "create": "reveal", "respond": "e2ee", "blind": "e2ee", "results": "teams"}
-# contiguous runs of bars sharing a style form one section
-_runs = []
-for _s in tl["scenes"]:
-    _a, _b = round(_s["start"] / BAR_S), round(_s["end"] / BAR_S)
-    _k = STYLE.get(_s["id"], _s["id"])
-    if _b <= _a:
-        continue
-    if _runs and _runs[-1][0] == _k:
-        _runs[-1][2] = _b
-    else:
-        _runs.append([_k, _a, _b])
-SCENES = {}
-for _k, _a, _b in _runs:
-    _n = _k
-    while _n in SCENES:
-        _n += "_2"
-    SCENES[_n] = (_a, _b)
+BEAT = 60 / BPM
+TOTAL_BEATS = int(np.ceil(tl["duration"] / BEAT))
+SCENES = [(s["id"], s["start"] / BEAT, s["end"] / BEAT) for s in tl["scenes"]]
 
 
-def section(bar):
-    for k, (a, b) in SCENES.items():
-        if a <= bar < b:
-            return k.split("_2")[0], bar - a, b - a
-    return "cta", 0, 1
+def scene_at(beat):
+    for sid, a, b in SCENES:
+        if a <= beat < b:
+            return sid, beat - a, b - a
+    return SCENES[-1][0], 0.0, 1.0
 
 
-# ---- harmony ---------------------------------------------------------------
-# chords as MIDI note lists (voicings around middle C), one per bar
-D = 62
-BRIGHT = [  # Bm9 | Gmaj9 | Dmaj9/F# | Asus4->A
-    [47, 59, 62, 66, 69, 73],
-    [43, 59, 62, 66, 69, 71],
-    [42, 57, 62, 64, 66, 69],
-    [45, 57, 62, 64, 69, 71],
+def start_of(sid):
+    return next(a for s, a, _ in SCENES if s == sid)
+
+
+# ---- harmony: one chord per bar (4 beats) -----------------------------------
+NIGHT = [  # Dm9 | Bbmaj7 | Gm9 | A7sus4
+    [38, 57, 60, 64, 65, 69],
+    [34, 53, 57, 62, 65, 69],
+    [43, 53, 58, 62, 65, 69],
+    [45, 55, 62, 64, 67, 69],
 ]
-DARK = [  # Bm | Gmaj7#11-ish | Em9 | F#sus4 (tension)
-    [47, 59, 62, 66, 71],
-    [43, 59, 62, 67, 73],
-    [40, 59, 62, 66, 67],
-    [42, 59, 61, 66, 71],
+DAY = [  # Fmaj9 | C/E | Dm7 | Bbmaj9  (I – V/3 – vi7 – IV)
+    [41, 57, 60, 64, 67, 69],
+    [40, 55, 60, 64, 67, 72],
+    [38, 57, 60, 65, 69, 72],
+    [46, 57, 60, 62, 65, 69],
 ]
-FINAL = [38, 57, 62, 64, 66, 69, 73, 76]  # Dmaj9 (add 13 colour)
+HUSH = [  # Dm9 | Bbmaj9 | Gm9 | Csus2 → back to F
+    [38, 57, 60, 64, 65, 69],
+    [46, 57, 60, 62, 65, 69],
+    [43, 53, 58, 62, 65, 69],
+    [48, 55, 60, 62, 67, 72],
+]
+FINAL = [29, 41, 57, 60, 64, 67, 69, 72, 76]  # Fmaj9, wide
 
 
-def chord_for(bar):
-    sec, i, n = section(bar)
-    if sec == "problem":
-        return DARK[i % 4]
-    if sec == "cta":
-        return FINAL if i < 2 else BRIGHT[(i - 2) % 4] if i < n - 2 else FINAL
-    return BRIGHT[bar % 4]
+def chord(beat):
+    sid, lb, _ = scene_at(beat)
+    bar = int(lb // 4)
+    if sid in ("intro", "problem"):
+        return NIGHT[bar % 4]
+    if sid == "blind":
+        return HUSH[bar % 4] if lb < 16 else DAY[0]
+    if sid == "cta":
+        return FINAL if bar == 0 or lb >= 12 else DAY[bar % 4]
+    return DAY[bar % 4]
 
 
-# ---- MIDI writing ----------------------------------------------------------
+# ---- MIDI ---------------------------------------------------------------------
 class Part:
-    def __init__(self, name, program, channel, bank=0, volume=100, pan=64):
-        self.name, self.program, self.channel, self.bank = name, program, channel, bank
-        self.volume, self.pan = volume, pan
-        self.events = []  # (tick, msg)
+    def __init__(self, name, program, channel, volume=100, pan=64, reverb=70):
+        self.name, self.program, self.channel = name, program, channel
+        self.volume, self.pan, self.reverb = volume, pan, reverb
+        self.events = []
 
-    def note(self, beat, dur_beats, pitch, vel):
+    def note(self, beat, dur, pitch, vel):
+        if beat < 0 or beat >= TOTAL_BEATS:
+            return
         a = int(round(beat * TPB))
-        b = int(round((beat + dur_beats) * TPB))
-        vel = int(max(1, min(127, vel)))
-        self.events.append((a, mido.Message("note_on", note=int(pitch), velocity=vel, channel=self.channel)))
+        b = int(round((beat + dur) * TPB))
+        v = int(max(1, min(127, vel)))
+        self.events.append((a, mido.Message("note_on", note=int(pitch), velocity=v, channel=self.channel)))
         self.events.append((max(a + 1, b), mido.Message("note_off", note=int(pitch), velocity=0, channel=self.channel)))
 
-    def cc(self, beat, ctrl, val):
-        self.events.append((int(round(beat * TPB)), mido.Message("control_change", control=ctrl, value=int(max(0, min(127, val))), channel=self.channel)))
-
-    def track(self, with_tempo=True):
+    def track(self):
         tr = mido.MidiTrack()
-        if with_tempo:
-            tr.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(BPM), time=0))
+        tr.append(mido.MetaMessage("set_tempo", tempo=mido.bpm2tempo(BPM), time=0))
         tr.append(mido.MetaMessage("track_name", name=self.name, time=0))
-        tr.append(mido.Message("program_change", program=self.program, channel=self.channel, time=0))
-        tr.append(mido.Message("control_change", control=7, value=self.volume, channel=self.channel, time=0))
-        tr.append(mido.Message("control_change", control=10, value=self.pan, channel=self.channel, time=0))
-        tr.append(mido.Message("control_change", control=91, value=70, channel=self.channel, time=0))  # reverb send
-        tr.append(mido.Message("control_change", control=93, value=20, channel=self.channel, time=0))  # chorus
-        ev = sorted(self.events, key=lambda e: (e[0], 0 if e[1].type == "note_off" else 1))
+        if self.channel != 9:
+            tr.append(mido.Message("program_change", program=self.program, channel=self.channel, time=0))
+        for ctl, val in ((7, self.volume), (10, self.pan), (91, self.reverb), (93, 8)):
+            tr.append(mido.Message("control_change", control=ctl, value=val, channel=self.channel, time=0))
         last = 0
-        for tick, msg in ev:
+        for tick, msg in sorted(self.events, key=lambda e: (e[0], 0 if e[1].type == "note_off" else 1)):
             tr.append(msg.copy(time=tick - last))
             last = tick
         tr.append(mido.MetaMessage("end_of_track", time=TPB * 8))
         return tr
 
 
-pad = Part("pad", 89, 0, volume=92)          # Pad 2 (warm)
-strings = Part("strings", 49, 1, volume=70)  # Slow strings, glue for big moments
-arp = Part("arp", 46, 2, volume=88, pan=78)  # Orchestral harp: plucky, warm
-ep = Part("keys", 4, 3, volume=80, pan=50)   # Electric piano 1 counter-melody
-bass = Part("bass", 38, 4, volume=96)        # Synth bass 1
-lead = Part("lead", 81, 5, volume=58, pan=70)  # Saw lead (gamers only), quiet
-bell = Part("bell", 14, 6, volume=74, pan=40)  # Tubular-ish bell motif (hook / cta)
-drums = Part("drums", 25, 9, bank=128, volume=100)  # TR-808 kit
-
-KICK, SNARE, CLAP, HAT, OHAT, CRASH, RIDE, TOM = 36, 38, 39, 42, 46, 49, 51, 45
-
-kicks = []  # seconds, for sidechain
+choir = Part("choir", 52, 0, volume=78, reverb=100)  # Choir aahs: the night air
+celesta = Part("celesta", 8, 1, volume=84, pan=84, reverb=96)
+cello = Part("cello", 42, 2, volume=82, pan=48)
+guitar = Part("guitar", 24, 3, volume=104, pan=44, reverb=55)  # nylon, fingerpicked
+marimba = Part("marimba", 12, 4, volume=76, pan=86, reverb=50)
+bass = Part("bass", 32, 5, volume=96, reverb=30)  # acoustic bass
+pizz = Part("pizz", 45, 6, volume=84, pan=74, reverb=70)
+flute = Part("flute", 73, 7, volume=82, pan=58, reverb=80)
+perc = Part("perc", 0, 9, volume=92, reverb=40)
+parts = [choir, celesta, cello, guitar, marimba, bass, pizz, flute, perc]
 
 rng = np.random.default_rng(7)
-for bar in range(TOTAL_BARS):
-    sec, i, n = section(bar)
-    b0 = bar * 4
-    ch = chord_for(bar)
-    root = ch[0]
-    upper = ch[1:]
+DAY_START = start_of("create")
 
-    # --- pads: everywhere, swell per bar
-    pad_vel = {"hook": 62, "problem": 58, "reveal": 70, "cta": 72}.get(sec, 66)
-    if sec == "cta" and i >= n - 1:
-        pad_vel = 50
-    for p in upper:
-        pad.note(b0, 4.0, p, pad_vel)
-    pad.cc(b0, 11, 70)
-    pad.cc(b0 + 1.5, 11, 110)
-    if sec in ("reveal", "teams", "everywhere") or (sec == "cta" and i < 2):
-        for p in upper[-3:]:
-            strings.note(b0, 4.0, p + 12, 52)
 
-    # --- bell motif: hook + end card (sparse, memorable 4-note figure)
-    if sec == "hook" or (sec == "cta" and i >= 2):
-        motif = [(0, 78), (1.5, 81), (2, 76), (3, 74)] if bar % 2 == 0 else [(0, 74), (2.5, 73), (3, 69)]
-        for (bt, p) in motif:
-            bell.note(b0 + bt, 1.4, p, 54 if sec == "hook" else 46)
+def tones(c, lo, hi):
+    """chord tones (any octave) inside [lo, hi]"""
+    pcs = sorted({p % 12 for p in c[1:]})
+    return [n for n in range(lo, hi + 1) if n % 12 in pcs]
 
-    # --- problem: muted 8th pulse + rising tension
-    if sec == "problem":
-        for k in range(8):
-            bass.note(b0 + k * 0.5, 0.32, root + 12 if k % 4 == 3 else root, 70 + 4 * i)
-        for k in range(4):
-            drums.note(b0 + k + 0.5, 0.1, HAT, 38 + 5 * i)
-        if i == n - 1:  # snare roll into the reveal
-            for k in range(16):
-                drums.note(b0 + 2 + k * 0.125, 0.1, SNARE, 30 + k * 5)
 
-    # --- reveal onwards: arp
-    groove = sec in ("e2ee", "mls", "devices", "teams", "gamers", "everywhere")
-    if sec == "reveal" or groove or (sec == "cta" and 2 <= i < n - 1):
-        pattern = [0, 2, 1, 3, 2, 4, 3, 1] if sec != "gamers" else [0, 2, 4, 2, 1, 3, 4, 3]
-        notes = sorted(set(upper))[-5:]
-        step = 0.5 if sec not in ("gamers",) else 0.25
-        count = int(4 / step)
-        for k in range(count):
-            p = notes[pattern[k % len(pattern)] % len(notes)] + 12
-            v = 60 + (10 if k % 4 == 0 else 0) - (12 if sec == "cta" else 0)
-            if sec == "reveal" and i == 0 and k < 4:
-                continue  # let the impact breathe
-            arp.note(b0 + k * step, step * 0.9, p, v)
+for bar_beat in range(0, TOTAL_BEATS, 4):
+    b0 = float(bar_beat)
+    sid, lb, n = scene_at(b0 + 0.01)
+    c = chord(b0 + 0.01)
+    night = sid in ("intro", "problem")
+    groove = sid in ("create", "respond", "results")
+    low = c[0] if c[0] >= 36 else c[0] + 12
 
-    # --- impacts
-    if (sec == "reveal" and i == 0) or (sec == "cta" and i == 0) or (sec == "gamers" and i == 0) or (sec == "teams" and i == 0):
-        drums.note(b0, 2, CRASH, 90 if sec != "teams" else 70)
-        drums.note(b0, 0.5, KICK, 120)
-        kicks.append(b0 * 60 / BPM)
-        for p in ch:
-            strings.note(b0, 4.0, p + 12, 60)
-        bass.note(b0, 3.5, root - 12 if root > 40 else root, 110)
-
-    # --- groove
-    if groove:
-        energy = {"e2ee": 1, "mls": 1, "devices": 1, "teams": 2, "gamers": 3, "everywhere": 2}[sec]
-        light = sec == "e2ee" and i < 2
-        for k in range(4):
-            if light and k % 2 == 1:
-                continue
-            drums.note(b0 + k, 0.4, KICK, 104)
-            kicks.append((b0 + k) * 60 / BPM)
-        hat_step = 0.25 if energy >= 3 else 0.5
-        for k in range(int(4 / hat_step)):
-            bt = b0 + k * hat_step
-            if hat_step == 0.5 and k % 2 == 0:
-                continue  # offbeat 8ths
-            drums.note(bt, 0.1, HAT, 48 + int(rng.integers(0, 14)) + (6 if k % 2 else 0))
-        if energy >= 2:
-            drums.note(b0 + 1, 0.2, CLAP, 72)
-            drums.note(b0 + 3, 0.2, CLAP, 76)
-        if energy >= 2 and i % 2 == 1:
-            drums.note(b0 + 3.5, 0.2, OHAT, 50)
-        # bass: root 8ths with octave pops
-        for k in range(8):
-            if light and k % 2 == 1:
-                continue
-            p = root + (12 if k in (3, 7) and energy >= 2 else 0)
-            bass.note(b0 + k * 0.5, 0.42, p, 88 if k % 2 == 0 else 72)
-        # counter melody on EP in teams / everywhere
-        if sec in ("teams", "everywhere"):
-            mel = [[(0, 78), (0.75, 76), (1.5, 74), (2.5, 71)], [(0, 74), (1, 76), (2, 78), (3, 81)], [(0, 78), (1.5, 76), (2.5, 74)], [(0, 76), (1, 74), (2, 73), (3, 69)]][bar % 4]
-            for (bt, p) in mel:
-                ep.note(b0 + bt, 0.9, p, 62)
-        if sec == "gamers":
-            hook = [(0, 81), (0.5, 78), (1, 76), (1.5, 78), (2.5, 81), (3, 83)] if bar % 2 == 0 else [(0, 85), (0.5, 83), (1, 81), (2, 78), (3, 76)]
-            for (bt, p) in hook:
-                lead.note(b0 + bt, 0.45, p, 70)
-            for k in (0, 1.5, 3):
-                for p in upper[-3:]:
-                    ep.note(b0 + k, 0.3, p + 12, 56)
-        # fill into the next section
-        nsec, _, _ = section(bar + 1)
-        if nsec != sec:
+    # --- night bed
+    if night:
+        for p in c[1:]:
+            choir.note(b0, 4, p, 52 if sid == "intro" else 46)
+        cello.note(b0, 4, low, 58)
+        if sid == "problem":  # the pulse tightens toward the sunrise
             for k in range(4):
-                drums.note(b0 + 3 + k * 0.25, 0.1, TOM, 60 + k * 10)
+                cello.note(b0 + k, 0.9, low, 44 + 6 * k + int(lb))
+        hi = tones(c, 76, 93)  # celesta stars: a few high chord tones, scattered
+        for k in range(3 if sid == "intro" else 1):
+            at = b0 + float(rng.choice([0, 0.5, 1.5, 2, 2.5, 3.5]))
+            celesta.note(at, 1.5, int(rng.choice(hi)), 50 + int(rng.integers(0, 14)))
 
-    # --- cta tail: final bass + gentle ending
-    if sec == "cta" and i >= 1:
-        bass.note(b0, 3.8, root if root < 50 else root - 12, 60 if i < n - 1 else 45)
+    # --- daylight: fingerpicked guitar under everything from sunrise on
+    if groove or (sid == "blind" and lb >= 16) or (sid == "cta" and lb < 4):
+        gt = tones(c, 52, 76)
+        figure = [None, 2, 3, 4, None, 3, 4, 2]  # bass on 1 and 3, a rolling figure between
+        for k, f in enumerate(figure):
+            if f is None:
+                guitar.note(b0 + k * 0.5, 1.0, low, 70)
+            else:
+                guitar.note(b0 + k * 0.5, 0.6, gt[min(len(gt) - 1, f + 1)], 56 + (6 if k % 2 else 0))
+    if groove:
+        mt = tones(c, 72, 88)
+        for k in range(8):
+            marimba.note(b0 + k * 0.5, 0.45, mt[[0, 2, 1, 3, 0, 2, 4, 3][k] % len(mt)], 48 + (10 if k % 4 == 0 else 0))
+        bass.note(b0, 1.5, low if low < 48 else low - 12, 82)
+        bass.note(b0 + 2, 1.0, (low if low < 48 else low - 12) + 7, 70)
+        bass.note(b0 + 3.5, 0.5, low if low < 48 else low - 12, 60)
+        for k in range(16):  # shaker 16ths, off-beats leaning
+            perc.note(b0 + k * 0.25, 0.2, 70, 34 + (16 if k % 4 == 2 else 0) + int(rng.integers(0, 6)))
+        perc.note(b0, 0.5, 36, 70)  # soft kick on 1 and 3, side stick on 2 and 4
+        perc.note(b0 + 2, 0.5, 36, 62)
+        perc.note(b0 + 1, 0.3, 37, 40)
+        perc.note(b0 + 3, 0.3, 37, 44)
+        if sid == "results":
+            perc.note(b0 + 1, 0.3, 54, 52)
+            perc.note(b0 + 3, 0.3, 54, 56)
 
-parts = [pad, strings, arp, ep, bass, lead, bell, drums]
+    # --- the blind beat: hushed, plucked, a little mysterious
+    if sid == "blind" and lb < 16:
+        for p in c[2:]:
+            choir.note(b0, 4, p, 40)
+        pt = tones(c, 55, 79)
+        for k in range(8):
+            pizz.note(b0 + k * 0.5, 0.4, pt[[0, 2, 4, 2, 1, 3, 5, 3][k] % len(pt)], 54 + (8 if k == 0 else 0))
+        bass.note(b0, 3.5, low if low < 48 else low - 12, 62)
+        ct = tones(c, 79, 96)
+        celesta.note(b0 + 0.5, 1, ct[-1], 46)
+        celesta.note(b0 + 2.5, 1, ct[-3], 42)
+
+# --- the lift on "Introducing Noon": a celesta run up
+t_title = start_of("intro") + 4.5 / BEAT
+for k, p in enumerate(tones(NIGHT[0], 69, 98)[:10]):
+    celesta.note(t_title + k * 0.125, 0.8, p, 46 + 3 * k)
+
+# --- sunrise: a strum lands exactly on the cut into daylight
+for k, p in enumerate([41, 48, 53, 57, 60, 64, 67]):
+    guitar.note(DAY_START + k * 0.04, 3.5, p, 78)
+for p in DAY[0][1:]:
+    choir.note(DAY_START, 4, p + 12, 44)
+perc.note(DAY_START - 0.02, 1.0, 57, 50)  # crash, gently
+
+# --- the flute hook in results, and its last phrase on the end card
+HOOK = [(0, 1, 69), (1, 0.5, 72), (1.5, 1.5, 74), (3, 1, 72), (4, 1.5, 77), (5.5, 0.5, 76), (6, 2, 72),
+        (8, 1, 74), (9, 0.5, 72), (9.5, 1.5, 69), (11, 1, 67), (12, 4, 69)]
+r0 = start_of("results") + 4
+for at, d, p in HOOK:
+    if r0 + at < start_of("cta"):
+        flute.note(r0 + at, d, p, 74)
+c0 = start_of("cta")
+for at, d, p in [(0.5, 1, 72), (1.5, 1, 74), (2.5, 1.5, 76), (4, 6, 77)]:
+    flute.note(c0 + at, d, p, 70)
+for k, p in enumerate(tones(FINAL, 76, 100)[:9]):
+    celesta.note(c0 + 0.25 + k * 0.16, 2.5, p, 44 + 2 * k)
+for p in FINAL:
+    choir.note(c0, 14, p + (12 if p < 52 else 0), 46)
+bass.note(c0, 12, 29, 74)
+
+# ---- render ------------------------------------------------------------------
 OUT.mkdir(parents=True, exist_ok=True)
 (OUT / "stems").mkdir(exist_ok=True)
-
 mid = mido.MidiFile(ticks_per_beat=TPB)
-for k, p in enumerate(parts):
-    mid.tracks.append(p.track(with_tempo=(k == 0)))
+for p in parts:
+    mid.tracks.append(p.track())
 mid.save(OUT / "score.mid")
 
 total_s = tl["duration"]
@@ -266,13 +240,13 @@ n_samples = int(round(total_s * SR))
 
 def render_part(p):
     m = mido.MidiFile(ticks_per_beat=TPB)
-    m.tracks.append(p.track(with_tempo=True))
+    m.tracks.append(p.track())
     mp = OUT / "stems" / f"{p.name}.mid"
     wp = OUT / "stems" / f"{p.name}.wav"
     m.save(mp)
     subprocess.run(
         ["fluidsynth", "-ni", "-q", "-g", "0.6", "-r", str(SR), "-o", "synth.reverb.active=1", "-o", "synth.chorus.active=1",
-         "-o", "synth.reverb.room-size=0.75", "-o", "synth.reverb.width=0.9", "-o", "synth.reverb.level=0.6",
+         "-o", "synth.reverb.room-size=0.82", "-o", "synth.reverb.width=1.0", "-o", "synth.reverb.level=0.7",
          "-F", str(wp), str(SF2), str(mp)],
         check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
     )
@@ -285,42 +259,14 @@ def render_part(p):
 
 
 print(f"rendering {len(parts)} stems with FluidSynth…", file=sys.stderr)
-stems = {p.name: render_part(p) for p in parts}
-
-# --- sidechain envelope keyed from kick times (classic pumping, subtle)
-env = np.ones(n_samples)
-rel = 0.24
-depth = 0.42
-for kt in kicks:
-    a = int(kt * SR)
-    if a >= n_samples:
-        continue
-    n = min(int(rel * SR), n_samples - a)
-    x = np.linspace(0, 1, n)
-    env[a:a + n] = np.minimum(env[a:a + n], 1 - depth * (1 - x) ** 2)
-sc = env[:, None]
-
-gains = {"pad": 0.9, "strings": 0.55, "arp": 0.95, "keys": 0.55, "bass": 0.85, "lead": 0.42, "bell": 0.6, "drums": 0.8}
-duck = {"pad", "strings", "arp", "bass", "keys"}
+stems = {p.name: render_part(p) for p in parts if p.events}
+gains = {"choir": 0.8, "celesta": 0.7, "cello": 0.7, "guitar": 1.0, "marimba": 0.6, "bass": 0.85, "pizz": 0.7, "flute": 0.6, "perc": 0.65}
 mix = np.zeros((n_samples, 2))
 for name, a in stems.items():
-    g = gains.get(name, 0.7)
-    mix += (a * sc if name in duck else a) * g
+    mix += a * gains.get(name, 0.7)
 
-# riser before the reveal: filtered noise swell (2 bars)
-r0, _ = SCENES["reveal"]
-r_end = r0 * BAR_S
-r_start = r_end - 2 * BAR_S
-idx = np.arange(int(r_start * SR), int(r_end * SR))
-noise = rng.standard_normal((len(idx), 2))
-# crude rising high-pass via differencing blend + exponential amp swell
-k = np.linspace(0, 1, len(idx))[:, None]
-hp = np.vstack([noise[:1], np.diff(noise, axis=0)])
-swell = (k ** 2.5) * 0.06
-mix[idx] += (noise * (1 - k) * 0.4 + hp * k) * swell
-
-# fade the last bar to silence; gentle fade-in on the first 0.5s
-fade = int(BAR_S * 1.5 * SR)
+# fade the last 1.5 bars to silence; gentle fade-in on the first 0.5 s
+fade = int(6 * BEAT * SR)
 mix[-fade:] *= np.linspace(1, 0, fade)[:, None] ** 1.5
 fi = int(0.5 * SR)
 mix[:fi] *= np.linspace(0, 1, fi)[:, None]
@@ -328,4 +274,4 @@ mix[:fi] *= np.linspace(0, 1, fi)[:, None]
 peak = np.max(np.abs(mix)) or 1
 mix = mix / peak * 0.89
 sf.write(OUT / "music.wav", mix.astype(np.float32), SR, subtype="FLOAT")
-print(json.dumps({"bpm": BPM, "bars": TOTAL_BARS, "seconds": total_s, "kicks": len(kicks), "out": str(OUT / "music.wav")}))
+print(json.dumps({"bpm": BPM, "beats": TOTAL_BEATS, "seconds": total_s, "stems": list(stems), "out": str(OUT / "music.wav")}))

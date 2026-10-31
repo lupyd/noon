@@ -16,18 +16,18 @@ import * as mycrypto from '../../frontend/src/crypto.ts'
 import { FieldType, ParticipantMode, decodeUserForms, encodeBlindSubmission, encodeForm, encodeFormSubmission, encodeOtpRequest, encodeOtpVerify } from '../../frontend/src/proto.ts'
 
 const API = process.env.NOON_API ?? 'http://127.0.0.1:39210'
-export const OWNER = 'maya@halcyonlabs.io'
+export const OWNER = 'maya@lupyd.com'
 const DB = 'noon-test-db'
 
 // ---------------------------------------------------------------- people
-// The Halcyon Labs platform org: the whitelist for the team pulse.
+// The platform team at Lupyd: the whitelist for the team pulse.
 export const TEAM = [
   'jordan.ellis', 'priya.raman', 'sam.okafor', 'lena.fischer', 'diego.alvarez', 'hannah.kim', 'marcus.bell', 'aisha.mensah',
   'tom.becker', 'yuki.tanaka', 'nadia.haddad', 'olivia.grant', 'ravi.shah', 'chloe.martin', 'ben.osei', 'ines.costa',
   'kofi.asante', 'mia.novak', 'arjun.mehta', 'zoe.lambert', 'felix.wagner', 'amara.eze', 'noah.reyes', 'sara.lindqvist',
   'leo.dubois', 'fatima.zahra', 'ethan.cole', 'maya.iyer', 'jonas.berg', 'elena.petrova', 'kai.nakamura', 'grace.liu',
   'omar.farouk', 'ruby.walsh', 'theo.martins', 'anya.volkova', 'luis.moreno', 'isla.campbell', 'daniel.park', 'nora.quinn',
-].map((n) => `${n}@halcyonlabs.io`)
+].map((n) => `${n}@lupyd.com`)
 
 // ---------------------------------------------------------------- answers
 const rng = (() => {
@@ -202,7 +202,7 @@ async function reset() {
   for (let i = 0; i < bg.length; i++) {
     const [name, tpl, mode, allowed] = bg[i]
     const id = await createForm(own, templateForm(name, tpl, mode, allowed))
-    const people = allowed.length ? allowed.slice(0, fills[i]) : Array.from({ length: fills[i] }, (_, k) => `guest${k}.${i}@mailbox.org`)
+    const people = allowed.length ? allowed.slice(0, fills[i]) : Array.from({ length: fills[i] }, (_, k) => `guest${k}.${i}@example.com`)
     const n = await fillForm(id, people, {}, mode)
     console.log(`${name}: form ${id}, ${n} responses`)
   }

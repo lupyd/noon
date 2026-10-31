@@ -4,6 +4,6 @@ export const CONTENT_H: number
 export const NAVY: string
 export interface NoonLogo {
   suns: { c: [number, number]; r: number; rim: number }[]
-  draw(p: { t: number; amp: number; angle: number; rect: number[] }): void
+  draw(p: { t: number; amp: number; angle: number; rect: number[]; sky?: boolean }): void
 }
 export function createLogo(canvas: HTMLCanvasElement, opts: { svgUrl: string; tex?: number; starTex?: number; detail?: number }): Promise<NoonLogo>

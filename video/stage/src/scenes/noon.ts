@@ -57,7 +57,7 @@ export const logoScene: SceneBuilder = ({ root, s, dur }) => {
     ? { spin: [0, 0.9], zoom: [0.2, 3.6], flames: [1.6, 3.4], slide: [4.1, 5.2], l1: [4.55, 5.3], l2: [4.7, 5.5], l3: [99, 99] }
     : { spin: [-30, -29], zoom: [-1, -0.5], flames: [-1, -0.5], slide: [0.7, 1.8], l1: [1.05, 1.8], l2: [1.3, 2.1], l3: [1.6, 2.4] }
   const ZOOM0 = 4.6
-  const title = el('div', { class: 'noon-title' })
+  const title = el('div', { class: intro ? 'noon-title' : 'noon-title day' })
   const lines = intro
     ? [el('div', { class: 'nt-intro' }, 'Introducing'), el('div', { class: 'nt-name' }, 'Noon')]
     : [el('div', { class: 'nt-name' }, 'Noon'), el('div', { class: 'nt-tag' }, 'Honest answers, by design.'), el('div', { class: 'nt-url' }, 'noon.lupyd.com')]
@@ -82,7 +82,7 @@ export const logoScene: SceneBuilder = ({ root, s, dur }) => {
     const focus = [f0[0] + (CONTENT_C[0] - f0[0]) * w, f0[1] + (CONTENT_C[1] - f0[1]) * w]
     const sl = outQuint(p01(lt, T.slide[0], T.slide[1]))
     const r = frameAt(lerp(W / 2, W * 0.3, sl), H / 2, 0.82 * z * lerp(1, 0.8, sl), focus)
-    if (logo) logo.draw({ t: s.start + lt, amp, angle, rect: r.map((v) => v * dpr) })
+    if (logo) logo.draw({ t: s.start + lt, amp, angle, rect: r.map((v) => v * dpr), sky: intro })
     ranges.forEach((rg, i) => {
       const u = outQuint(p01(lt, rg[0], rg[1]))
       css(lines[i], { opacity: u.toFixed(3), transform: `translateY(${((1 - u) * 36).toFixed(1)}px)` })
@@ -150,7 +150,7 @@ export const phoneScene: SceneBuilder = ({ root, s, dur }) => {
  * carrying the signature, to the responses. Nothing links them afterwards.
  */
 const OTHERS_ANSWERS = ['On-call rotation is uneven.', 'Staging is broken more often than it works.', 'Honestly fine right now.']
-const OTHERS_EMAILS = ['jordan.ellis@halcyonlabs.io', 'sam.okafor@halcyonlabs.io', 'lena.fischer@halcyonlabs.io']
+const OTHERS_EMAILS = ['jordan.ellis@lupyd.com', 'sam.okafor@lupyd.com', 'lena.fischer@lupyd.com']
 export const blind: SceneBuilder = ({ root, s, dur }) => {
   const msg = (s as any).message as string
   const email = (s as any).email as string
@@ -185,16 +185,16 @@ export const blind: SceneBuilder = ({ root, s, dur }) => {
     // body text: plain → blinded noise → (after signing) unblinded again
     body.textContent = lt < T.split ? encrypt(msg, lt, T.lockA, T.lockB, 5) : scramble(msg, lt, T.unA, T.unB, 5)
     const locked = lt >= T.lockB - 0.15 && lt < T.unB - 0.1
-    css(body, { color: locked ? 'var(--mint)' : '#f4f4f6', fontFamily: lt > T.lockA && lt < T.unB ? 'var(--mono)' : 'var(--sans)' })
+    css(body, { color: locked ? 'var(--sun)' : 'var(--ink)', fontFamily: lt > T.lockA && lt < T.unB ? 'var(--mono)' : 'var(--display)' })
     const lb = spring(lt - (T.lockB - 0.15), { stiffness: 320, damping: 14 })
     css(lockI, { opacity: locked ? '1' : '0', transform: `scale(${(0.6 + 0.4 * lb).toFixed(3)})` })
     const sb = spring(lt - T.sign, { stiffness: 300, damping: 13 })
-    css(sealI, { opacity: lt > T.sign ? '1' : '0', transform: `scale(${(lt > T.sign ? 0.5 + 0.5 * sb : 0).toFixed(3)})`, color: 'var(--mint)' })
+    css(sealI, { opacity: lt > T.sign ? '1' : '0', transform: `scale(${(lt > T.sign ? 0.5 + 0.5 * sb : 0).toFixed(3)})`, color: 'var(--sun)' })
 
     // server
     const sIn = spring(lt - 1.5, { stiffness: 160, damping: 18 })
     const pulse = lt > T.sign ? Math.exp(-(lt - T.sign) * 5) : 0
-    css(server, { left: `${960 - 58}px`, top: `${190 - 58}px`, opacity: clamp(sIn * 1.5).toFixed(3), transform: `scale(${(0.85 + 0.15 * sIn + 0.12 * pulse).toFixed(4)})`, boxShadow: `0 0 0 ${(1 + 10 * pulse).toFixed(1)}px rgba(124,240,196,${(0.12 + 0.4 * pulse).toFixed(3)}), 0 30px 60px -20px rgba(0,0,0,0.9)` })
+    css(server, { left: `${960 - 58}px`, top: `${190 - 58}px`, opacity: clamp(sIn * 1.5).toFixed(3), transform: `scale(${(0.85 + 0.15 * sIn + 0.12 * pulse).toFixed(4)})`, boxShadow: `0 0 0 ${(1 + 10 * pulse).toFixed(1)}px rgba(231,91,50,${(0.12 + 0.4 * pulse).toFixed(3)}), 0 30px 60px -24px rgba(120,64,20,0.45)` })
     css(serverLabel, { left: '960px', top: '268px', opacity: clamp(sIn * 1.5).toFixed(3) })
 
     // card path: centre → up to the server (small) → down-left to the responses column

@@ -12,7 +12,7 @@ import { fileURLToPath } from 'node:url'
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const OUT = path.join(ROOT, 'out')
 mkdirSync(OUT, { recursive: true })
-export const BPM = 120
+export const BPM = 96
 
 // Noon showcase (DIRECTION.md). kind: logo | typecard | clip | phone | blind (stage/src/scenes).
 // vo: line ids (placed lead → gap → …; `at` pins a line to a scene time). trim: [s before first
@@ -24,7 +24,7 @@ export const SHOTS = [
   { id: 'problem', kind: 'typecard', cards: ['“Anonymous” forms\nstill know who you are.'], vo: ['problem'], lead: 0.35, tail: 0.6, min: 4.5 },
   { id: 'create', kind: 'clip', beat: 'create', vo: ['create'], trim: [1.3, 1.1], title: 'Create.', speed: [[0, 1.5], [7.9, 1], [10.2, 1.6]] },
   { id: 'respond', kind: 'phone', beat: 'respond', vo: ['respond'], trim: [0.4, 1.0], title: 'Respond.', speed: [[0, 2.2], [9.2, 1.15], [13.0, 1.8], [16.6, 1]] },
-  { id: 'blind', kind: 'blind', vo: ['blind1', 'blind2'], lead: 0.7, gap: 0.55, tail: 0.9, min: 9, message: ANSWER, email: 'priya.raman@halcyonlabs.io' },
+  { id: 'blind', kind: 'blind', vo: ['blind1', 'blind2'], lead: 0.7, gap: 0.55, tail: 0.9, min: 9, message: ANSWER, email: 'priya.raman@lupyd.com' },
   { id: 'results', kind: 'clip', beat: 'results', vo: ['results'], trim: [0.5, 0.6], title: 'Results.', speed: [[0, 1.3], [3.4, 1], [6.1, 1.5]] },
   { id: 'cta', kind: 'logo', mode: 'outro', vo: ['cta1', 'cta2'], lead: 1.3, gap: 0.45, tail: 1.2, min: 6.5 },
 ]
@@ -69,7 +69,7 @@ const beatMeta = async (id, shot) => {
 
 let cursor = 0
 const scenes = []
-const SNAP = 0.5
+const SNAP = 60 / BPM // cuts land on the beat
 for (const shot of SHOTS) {
   const lines = (shot.vo ?? []).map((id) => {
     const l = script.lines.find((x) => x.id === id)

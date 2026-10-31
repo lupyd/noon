@@ -82,6 +82,23 @@ async function boot() {
   const fields = v4 ? [0, 1, 2, 3].map(() => el('div', { class: 'm' })) : []
   const sheen = v4 ? el('div', { class: 'sheen' }) : null
   if (v4) bg.append(...fields, sheen!, el('div', { class: 'floor' }))
+  // night to noon: the night sky covers the daylight until the sunrise, which
+  // sweeps up from below the frame into the cut to the first product shot
+  const night = el('div', { class: 'noon-night' })
+  const dawn = el('div', { class: 'noon-dawn' })
+  bg.append(night, dawn)
+  const SUNRISE = (tl.scenes.find((x) => x.id === 'create')?.start ?? 0) - 0.9
+  const sky = (t: number) => {
+    const k = ease.inOutCubic(prog(t, SUNRISE, SUNRISE + 1.3))
+    const R = k * 2700 - 300 // radius of the daylight, centred below the frame
+    const at = 'circle at 50% 118%'
+    const hole = `radial-gradient(${at}, transparent ${R.toFixed(0)}px, #000 ${(R + 320).toFixed(0)}px)`
+    css(night, { display: k >= 1 ? 'none' : '', maskImage: hole, webkitMaskImage: hole } as any)
+    css(dawn, {
+      opacity: k > 0 && k < 1 ? '1' : '0',
+      background: `radial-gradient(${at}, rgba(249,211,99,0) ${(R - 260).toFixed(0)}px, rgba(239,141,44,0.55) ${(R + 40).toFixed(0)}px, rgba(231,91,50,0.38) ${(R + 220).toFixed(0)}px, rgba(184,44,51,0) ${(R + 520).toFixed(0)}px)`,
+    })
+  }
   const blobs = [0, 1, 2].map((i) => {
     const b = el('div', { class: 'bg-blob', style: `width:${[1100, 900, 800][i]}px;height:${[900, 800, 700][i]}px` })
     bg.append(b)
@@ -135,6 +152,7 @@ async function boot() {
   const fontsReady = document.fonts.ready
   const updateAll = (t: number) => {
     if (v4) {
+      sky(t)
       const m = moodAt(t)
       const cols = [m.a, m.b, m.c, m.a]
       const P = [

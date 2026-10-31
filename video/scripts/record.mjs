@@ -8,7 +8,7 @@
 // in emulator mode; beats sign in through localStorage
 // tokens minted by scripts/seed.ts, exactly as the app stores them after OTP.
 //
-// For each beat: GPU headless Chromium opens the app (dark theme) at a
+// For each beat: GPU headless Chromium opens the app (light theme: the film is set at noon) at a
 // 1536×864 CSS viewport (= the stage window body) at device scale 2 (3072×1728 px, so
 // camera push-ins stay crisp), puppeteer drives it through
 // the app's own selectors with real mouse moves, clicks and
@@ -49,10 +49,10 @@ async function recordBeat(url, beat, extraArgs = []) {
   try {
     const page = await browser.newPage()
     await page.setViewport({ width: V.width, height: V.height, deviceScaleFactor: V.dpr, isMobile: !!V.mobile, hasTouch: !!V.mobile })
-    await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'dark' }])
+    await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }])
     await page.evaluateOnNewDocument(() => {
       try {
-        localStorage.setItem('theme', 'dark')
+        localStorage.setItem('theme', 'light')
       } catch {}
     })
     page.on('pageerror', (e) => console.warn(`  [${beat.id}] pageerror ${e.message}`))
