@@ -565,7 +565,7 @@ export const FormResults: React.FC = () => {
         </Link>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
           <div>
-            <h1 style={{ fontSize: '4rem', fontWeight: 900, marginBottom: '1rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
+            <h1 style={{ fontSize: 'clamp(2.5rem, 10vw, 4rem)', fontWeight: 900, marginBottom: '1rem', letterSpacing: '-0.04em', overflowWrap: 'anywhere' }}>{form?.name}</h1>
             <div style={{ display: 'flex', gap: '1.5rem', alignItems: 'center' }}>
               {((form != null && form!.deadline > 0)) && (
                 <span className="badge" style={{ background: 'rgba(239, 68, 68, 0.1)', borderColor: 'rgba(239, 68, 68, 0.2)', color: 'var(--error)', fontSize: '0.875rem' }}>

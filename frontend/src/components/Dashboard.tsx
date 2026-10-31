@@ -88,10 +88,10 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="dashboard animate-fade-in">
-      <div className="dashboard-header" style={{ marginBottom: '4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 style={{ fontSize: '4rem', fontWeight: 900, marginBottom: '1rem', letterSpacing: '-0.04em', display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <LayoutDashboard size={48} /> Dashboard
+      <div className="dashboard-header" style={{ marginBottom: '4rem', display: 'flex', flexWrap: 'wrap', gap: '1.5rem', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: 'clamp(2.5rem, 10vw, 4rem)', fontWeight: 900, marginBottom: '1rem', letterSpacing: '-0.04em', display: 'flex', alignItems: 'center', gap: '0.375em' }}>
+            <LayoutDashboard size="0.75em" style={{ flex: 'none' }} /> Dashboard
           </h1>
           <p className="text-muted" style={{ fontSize: '1.25rem' }}>
             {userEmail ? (

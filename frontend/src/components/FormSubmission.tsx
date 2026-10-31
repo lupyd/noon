@@ -405,7 +405,7 @@ export const FormSubmission: React.FC = () => {
           <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.2)' }}><Lock size={12} /> Anonymous</span>
           <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)' }}><Shield size={12} /> Verified Session</span>
         </div>
-        <h1 style={{ fontSize: '4.5rem', fontWeight: 900, marginBottom: '0.5rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
+        <h1 style={{ fontSize: 'clamp(2.5rem, 11vw, 4.5rem)', fontWeight: 900, marginBottom: '0.5rem', letterSpacing: '-0.04em', overflowWrap: 'anywhere' }}>{form?.name}</h1>
         <p className="owner-mention" style={{ fontSize: '1rem', marginBottom: '1.5rem', fontWeight: 600 }}>By {form?.owner?.replace('email:', '').replace('user:', '')}</p>
         <p className="description text-muted" style={{ fontSize: '1.25rem', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>{form == null ? '' : form.description}</p>
 
