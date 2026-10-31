@@ -88,10 +88,10 @@ export const Dashboard: React.FC = () => {
 
   return (
     <div className="dashboard animate-fade-in">
-      <div className="dashboard-header" style={{ marginBottom: '4rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
-        <div>
-          <h1 style={{ fontSize: '4rem', fontWeight: 900, marginBottom: '1rem', letterSpacing: '-0.04em', display: 'flex', alignItems: 'center', gap: '1.5rem' }}>
-            <LayoutDashboard size={48} /> Dashboard
+      <div className="dashboard-header" style={{ marginBottom: '4rem', display: 'flex', flexWrap: 'wrap', gap: '1.5rem', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+        <div style={{ minWidth: 0 }}>
+          <h1 style={{ fontSize: 'clamp(2.5rem, 10vw, 4rem)', fontWeight: 900, marginBottom: '1rem', letterSpacing: '-0.04em', display: 'flex', alignItems: 'center', gap: '0.375em' }}>
+            <LayoutDashboard size="0.75em" style={{ flex: 'none' }} /> Dashboard
           </h1>
           <p className="text-muted" style={{ fontSize: '1.25rem' }}>
             {userEmail ? (
@@ -123,15 +123,15 @@ export const Dashboard: React.FC = () => {
         <div className="forms-grid" style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
           {forms.map(form => (
             <div key={form.id} className="form-item-card card" style={{ padding: '2rem', transition: 'transform 0.2s, background 0.2s' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div style={{ flex: 1 }}>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: '1 1 280px', minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', marginBottom: '0.5rem' }}>
                     <h4 style={{ fontSize: '1.5rem', margin: 0 }}>{form.name}</h4>
                     <span className="badge" style={{ background: 'rgba(255,255,255,0.05)', border: '1px solid var(--border)' }}>ID: {form.id}</span>
                   </div>
                   <p className="text-muted" style={{ marginBottom: '1.5rem', maxWidth: '600px' }}>{form.description || "No description provided."}</p>
                   
-                  <div style={{ display: 'flex', gap: '2rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+                  <div style={{ display: 'flex', flexWrap: 'wrap', columnGap: '2rem', rowGap: '0.5rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
                     <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                       <Clock size={14} /> Created {new Date(Number(form.createdAt) * 1000).toLocaleDateString()}
                     </span>

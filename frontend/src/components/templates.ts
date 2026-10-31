@@ -243,7 +243,7 @@ export const TEMPLATES: Template[] = [
       },
       {
         id: "blockers",
-        type: FieldType.TEXT,
+        type: FieldType.TEXTAREA,
         name: "blockers",
         label: "What is your biggest blocker or concern right now?",
         required: false,

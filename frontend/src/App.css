@@ -332,6 +332,39 @@ select:focus {
   border-radius: 1.25rem;
 }
 
+/* Navbar menu: one row on desktop (.nav-menu's children join the nav's row, the
+   theme toggle stays between the links and the account controls); a dropdown
+   under a single compact bar on mobile. */
+.nav-menu { display: contents; }
+.nav-menu .auth-section { order: 2; }
+.navbar-nav .theme-toggle-btn { order: 1; }
+.navbar-nav .nav-menu-btn { display: none; order: 3; }
+
+@media (max-width: 768px) {
+  .navbar { padding: 0.75rem 0; }
+  .navbar .container { flex-direction: row; padding: 0 1rem; }
+  .logo { margin-right: 0; }
+  .noon-logo { font-size: 2rem; }
+  .navbar-nav { gap: 0.5rem; }
+  .navbar-nav .nav-menu-btn { display: flex; padding: 0.5rem; }
+  .nav-menu {
+    display: none;
+    position: absolute; top: 100%; left: 0; right: 0;
+    flex-direction: column; align-items: stretch;
+    padding: 0.5rem 1rem 1rem;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    box-shadow: 0 16px 32px -16px var(--shadow);
+  }
+  .navbar-nav.open .nav-menu { display: flex; }
+  .nav-menu > a { padding: 0.875rem 0.5rem; font-size: 1.0625rem; border-bottom: 1px solid var(--border); }
+  .nav-menu > a[title="View on GitHub"] { border-bottom: none; gap: 0.75rem; }
+  .nav-menu > a[title="View on GitHub"]::after { content: 'GitHub'; }
+  .nav-menu .auth-section { margin: 0; padding: 0.75rem 0.5rem 0; border-left: none !important; justify-content: space-between; }
+  .nav-menu .auth-section:empty { display: none; }
+  .nav-menu .auth-section:not(:empty) { border-top: 1px solid var(--border); }
+}
+
 /* Mobile responsive */
 @media (max-width: 768px) {
   .hero h1 { font-size: 3rem; line-height: 1.1; }
@@ -348,11 +381,6 @@ select:focus {
 @media (max-width: 480px) {
   .hero h1 { font-size: 2.25rem; }
   .noon-logo-hero { display: none !important; }
-  .navbar .container { flex-direction: column; gap: 0.75rem; text-align: center; padding: 1rem; align-items: center; }
-  .navbar-nav { width: 100%; justify-content: center; flex-wrap: wrap; gap: 1rem; }
-  .auth-section { margin: 0 !important; padding: 0 !important; border: none !important; gap: 1rem; justify-content: center; width: 100%; }
-  .auth-section:not(:empty) { border-top: 1px solid var(--border) !important; padding-top: 0.75rem !important; margin-top: 0.25rem !important; }
-  .logo { margin-right: 0; }
   .card { padding: 1.5rem; }
 }
 
@@ -463,6 +491,20 @@ code {
   max-width: 800px;
   margin: 0 auto;
 }
+
+/* Form page (respondents) */
+.auth-gate.card { margin: 4rem auto; padding: 4rem 3rem; }
+.auth-gate-head { text-align: center; margin-bottom: 3rem; }
+.form-submission { padding-bottom: 10rem; }
+.form-submission .header-section { margin-bottom: 5rem; text-align: center; }
+.field-card { padding: 1.5rem 2rem; }
+.field-card > label { gap: 1rem; }
+/* choice indicators sit centred on their label (drop the browser's 3px top margin) */
+.field-card input[type="radio"], .field-card input[type="checkbox"] { margin: 0; flex: none; }
+.submit-row { margin-top: 4rem; display: flex; flex-direction: column; align-items: center; }
+.submit-row .primary-button { min-width: 300px; }
+/* text answers wrap and grow (FormSubmission GrowingText) */
+.growing-text { resize: none; overflow: hidden; line-height: 1.5; display: block; }
 
 .auth-options {
   margin-top: 1rem;
@@ -900,4 +942,37 @@ code {
   }
 }
 
+/* Phones: spend the screen on content, not padding */
+@media (max-width: 480px) {
+  .main-content { padding: 1rem 0 2rem; }
+  .container { padding: 0 1rem; }
+  .card { padding: 1.25rem; margin-bottom: 1rem; }
+  .auth-gate.card { margin: 0.5rem auto; padding: 1.75rem 1.25rem; }
+  .auth-gate-head { margin-bottom: 1.75rem; }
+  .form-submission { padding: 0 0 3rem; }
+  .form-submission .header-section { margin-bottom: 1.75rem; }
+  .form-submission .header-section h1 { font-size: 2.25rem !important; line-height: 1.1; }
+  .form-submission .description { font-size: 1.05rem !important; }
+  .field-card { padding: 1.1rem 1rem; }
+  .field-card > label { margin-bottom: 0.75rem !important; }
+  .submit-row { margin-top: 1.75rem; }
+  .submit-row .primary-button { min-width: 0; width: 100%; }
 
+  /* dashboard and results set their spacing inline; tighten it here */
+  .dashboard-header { margin-bottom: 1.5rem !important; gap: 1rem !important; }
+  .dashboard-header h1 { margin-bottom: 0.5rem !important; }
+  .dashboard-stats { grid-template-columns: 1fr 1fr !important; gap: 0.75rem !important; margin-bottom: 1.75rem !important; }
+  .dashboard-stats .card { padding: 1rem; margin-bottom: 0; }
+  .dashboard-stats .card > div { font-size: 2rem !important; }
+  .forms-grid { gap: 0.75rem !important; }
+  .form-item-card { padding: 1.25rem !important; }
+  .form-item-card .form-actions { width: 100%; }
+  .form-item-card .badge { white-space: nowrap; flex: none; }
+  .form-item-card .form-actions .primary-button { flex: 1; justify-content: center; }
+  .form-item-card p.text-muted { margin-bottom: 0.75rem !important; }
+  .error-container { margin: 0.5rem auto !important; padding: 2rem 1.25rem !important; }
+  .form-results { padding-bottom: 3rem !important; }
+  .results-header { margin-bottom: 1.5rem !important; }
+  .results-header > .text-button { margin-bottom: 1rem !important; }
+  .results-content th, .results-content td { padding: 0.875rem 1rem !important; }
+}

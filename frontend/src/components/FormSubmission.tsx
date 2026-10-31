@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useLayoutEffect, useRef } from 'react';
 import { useParams } from 'react-router-dom';
 import {
   decodeForm,
@@ -14,6 +14,47 @@ import { Send, CheckCircle, AlertCircle, Lock, Mail, Shield, ChevronRight, Hash,
 import { useUnifiedAuth } from '../auth';
 import { API_URL } from '../config';
 import * as mycrypto from '../crypto';
+
+/**
+ * A text answer that wraps and grows with what is typed, so the whole answer
+ * stays readable. `singleLine` keeps it one paragraph (TEXT fields): Enter does
+ * not insert a line break and pasted breaks become spaces, so the stored value
+ * is the same as a one-line input would give.
+ */
+const GrowingText: React.FC<{
+  singleLine?: boolean;
+  minRows?: number;
+  placeholder: string;
+  required: boolean;
+  maxLength?: number;
+  onValue: (v: string) => void;
+}> = ({ singleLine, minRows = 1, placeholder, required, maxLength, onValue }) => {
+  const ref = useRef<HTMLTextAreaElement>(null);
+  const [value, setValue] = useState('');
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight + (el.offsetHeight - el.clientHeight)}px`;
+  }, [value]);
+  return (
+    <textarea
+      ref={ref}
+      className="growing-text"
+      rows={minRows}
+      value={value}
+      placeholder={placeholder}
+      required={required}
+      maxLength={maxLength}
+      onKeyDown={singleLine ? (e) => { if (e.key === 'Enter') e.preventDefault(); } : undefined}
+      onChange={(e) => {
+        const v = singleLine ? e.target.value.replace(/\s*[\r\n]+\s*/g, ' ') : e.target.value;
+        setValue(v);
+        onValue(v);
+      }}
+    />
+  );
+};
 
 export const FormSubmission: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -325,8 +366,8 @@ export const FormSubmission: React.FC = () => {
   );
 
   if (needsAuth) return (
-    <div className="auth-gate card animate-fade-in" style={{ maxWidth: '600px', margin: '4rem auto', padding: '4rem 3rem' }}>
-      <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+    <div className="auth-gate card animate-fade-in" style={{ maxWidth: '600px' }}>
+      <div className="auth-gate-head">
         <div className="shield-blob" style={{ margin: '0 auto 2rem', position: 'relative', width: '64px', height: '64px' }}>
           <div style={{ position: 'absolute', inset: 0, background: 'var(--accent)', filter: 'blur(20px)', opacity: 0.4, borderRadius: '50%' }}></div>
           <Shield size={64} style={{ position: 'relative', color: 'var(--text)' }} />
@@ -399,13 +440,13 @@ export const FormSubmission: React.FC = () => {
   );
 
   return (
-    <div className="form-submission container animate-fade-in" style={{ paddingBottom: '10rem' }}>
-      <div className="header-section" style={{ marginBottom: '5rem', textAlign: 'center' }}>
+    <div className="form-submission container animate-fade-in">
+      <div className="header-section">
         <div style={{ display: 'flex', justifyContent: 'center', gap: '1rem', marginBottom: '2rem' }}>
           <span className="badge" style={{ background: 'rgba(59, 130, 246, 0.1)', borderColor: 'rgba(59, 130, 246, 0.2)' }}><Lock size={12} /> Anonymous</span>
           <span className="badge" style={{ background: 'rgba(16, 185, 129, 0.1)', borderColor: 'rgba(16, 185, 129, 0.2)' }}><Shield size={12} /> Verified Session</span>
         </div>
-        <h1 style={{ fontSize: '4.5rem', fontWeight: 900, marginBottom: '0.5rem', letterSpacing: '-0.04em' }}>{form?.name}</h1>
+        <h1 style={{ fontSize: 'clamp(2.5rem, 11vw, 4.5rem)', fontWeight: 900, marginBottom: '0.5rem', letterSpacing: '-0.04em', overflowWrap: 'anywhere' }}>{form?.name}</h1>
         <p className="owner-mention" style={{ fontSize: '1rem', marginBottom: '1.5rem', fontWeight: 600 }}>By {form?.owner?.replace('email:', '').replace('user:', '')}</p>
         <p className="description text-muted" style={{ fontSize: '1.25rem', maxWidth: '700px', margin: '0 auto', lineHeight: 1.6 }}>{form == null ? '' : form.description}</p>
 
@@ -420,21 +461,28 @@ export const FormSubmission: React.FC = () => {
 
       <form onSubmit={handleSubmit} className="submission-fields" style={{ maxWidth: '600px', margin: '0 auto' }}>
         {form?.fields.map((field, index: number) => (
-          <div key={field.id} className="form-group card animate-fade-in" style={{ padding: '1.5rem 2rem' }}>
-            <label style={{ fontSize: '0.875rem', marginBottom: '1.5rem', fontWeight: 800, color: 'var(--text)', display: 'flex', justifyContent: 'space-between' }}>
+          <div key={field.id} className="form-group card field-card animate-fade-in">
+            <label style={{ fontSize: '0.875rem', marginBottom: '1rem', fontWeight: 800, color: 'var(--text)', display: 'flex', justifyContent: 'space-between' }}>
               <span>{field.label} {field.required && <span style={{ color: 'var(--error)' }}>*</span>}</span>
               <span style={{ opacity: 0.3, fontWeight: 400 }}>0{index + 1}</span>
             </label>
 
             <div className="input-wrapper">
               {field.type === FieldType.TEXTAREA ? (
-                <textarea
+                <GrowingText
+                  minRows={3}
                   placeholder={field.placeholder || "Your detailed response..."}
                   required={field.required}
-                  onChange={(e) => handleInputChange(field.id, e.target.value, 'stringValue')}
-                  rows={4}
-                  style={{ resize: 'vertical' }}
                   maxLength={field.maxLength || undefined}
+                  onValue={(v) => handleInputChange(field.id, v, 'stringValue')}
+                />
+              ) : field.type === FieldType.TEXT && !field.pattern ? (
+                <GrowingText
+                  singleLine
+                  placeholder={field.placeholder || "Type your answer here..."}
+                  required={field.required}
+                  maxLength={field.maxLength || undefined}
+                  onValue={(v) => handleInputChange(field.id, v, 'stringValue')}
                 />
               ) : field.type === FieldType.NUMBER ? (
                 <input
@@ -523,12 +571,11 @@ export const FormSubmission: React.FC = () => {
           </div>
         ))}
 
-        <div style={{ marginTop: '4rem', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+        <div className="submit-row">
           <button
             type="submit"
             className="primary-button large"
             disabled={isSubmitting}
-            style={{ minWidth: '300px' }}
           >
             {isSubmitting ? 'Encrypting Payload...' : <><Send size={20} /> Submit Response</>}
           </button>

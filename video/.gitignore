@@ -1,0 +1,7 @@
+assets/soundfont/*.sf2
+beats/*.mp4
+.cache/
+node_modules/
+out/
+stage/dist/
+__pycache__/
