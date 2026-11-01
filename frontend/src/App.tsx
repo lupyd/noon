@@ -5,6 +5,7 @@ import { SunLogo } from './components/logo';
 import { UnifiedAuthProvider, useUnifiedAuth } from './auth';
 import { ThemeProvider } from './ThemeContext';
 import { ThemeToggle } from './components/ThemeToggle';
+import { DemoVideo } from './components/DemoVideo';
 import './App.css';
 
 const FormBuilder = lazy(() => import('./components/FormBuilder').then(m => ({ default: m.FormBuilder })));
@@ -147,6 +148,12 @@ function About() {
             </span>
           </div>
         </div>
+      </div>
+
+      {/* DEMO VIDEO */}
+      <div className="demo-video-section">
+        <h3 className="section-title-uppercase">SEE IT IN ACTION</h3>
+        <DemoVideo />
       </div>
 
       {/* WHY IT'S DIFFERENT SECTION (Matching Reference Image) */}
